@@ -1,0 +1,22 @@
+:root { --display: 'PJS', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; --body: 'PJS', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+body { background: #000; font-family: var(--body); -webkit-font-smoothing: antialiased; }
+.legal-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; max-width: 760px; margin: 0 auto; padding: 28px 24px 0; }
+.legal-top .brandmark { display: inline-flex; align-items: center; gap: 10px; color: var(--paper); text-decoration: none; font: 800 22px/1 var(--display); letter-spacing: -0.03em; }
+.legal-switch { display: flex; gap: 4px; }
+.legal-switch a { padding: 8px 14px; border-radius: 999px; color: var(--fog); text-decoration: none; font-size: 15px; font-weight: 500; }
+.legal-switch a:hover { color: var(--paper); }
+.legal-switch a[aria-current='page'] { background: rgba(255, 255, 255, 0.08); color: var(--paper); }
+.legal { max-width: 760px; margin: 0 auto; padding: 56px 24px 96px; color: var(--fog); font-size: 16.5px; line-height: 1.65; }
+.legal h1 { margin: 0 0 8px; color: var(--paper); font: 500 clamp(36px, 4vw + 12px, 52px)/1.05 var(--display); letter-spacing: -0.035em; }
+.legal .updated { margin: 0 0 40px; color: var(--mute); font-size: 14px; }
+.legal .lead { color: var(--paper); font-size: 18px; }
+.legal h2 { margin: 44px 0 10px; color: var(--paper); font: 600 21px/1.3 var(--display); letter-spacing: -0.02em; }
+.legal p { margin: 0 0 14px; max-width: 68ch; }
+.legal ul { margin: 0 0 14px; padding-left: 20px; max-width: 66ch; }
+.legal li { margin: 0 0 8px; }
+.legal li::marker { color: var(--mute); }
+.legal b { color: var(--paper); font-weight: 600; }
+.legal a { color: var(--paper); text-decoration: underline; text-decoration-color: rgba(255, 255, 255, 0.35); text-underline-offset: 3px; }
+.legal a:hover { text-decoration-color: currentColor; }
+.legal-foot { margin-top: 56px; padding-top: 20px; border-top: 1px solid rgba(255, 255, 255, 0.08); color: var(--mute); font-size: 14px; }
+@media (max-width: 560px) { .legal-top { padding-top: 20px; } .legal { padding-top: 36px; font-size: 16px; } .legal-switch a { padding: 8px 10px; } }

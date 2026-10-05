@@ -1,0 +1,29 @@
+# accounts database, the generated first-admin login and any local settings: never commit these
+backend/data/
+*.db
+*.db-shm
+*.db-wal
+FIRST_ADMIN_LOGIN.txt
+.env
+.env.*
+
+# environments and caches
+backend/.venv/
+.venv/
+frontend/node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.whl
+*.log
+
+# film production scratch (voice takes, rendered frames)
+tools/film/voice/
+tools/film/vo/
+tools/film/frames/
+tools/film/seq/
+
+# OS clutter
+.DS_Store
+Thumbs.db
+desktop.ini

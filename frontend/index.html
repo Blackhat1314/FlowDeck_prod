@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#000000" />
+    <title>Flowdeck: Bitcoin order flow heatmap, footprint and delta</title>
+    <meta name="description" content="Live Bitcoin perpetual order flow in your browser: liquidity heatmap, footprint, volume profile, delta, big trades, absorption and gamma levels. 3 days free." />
+    <link rel="canonical" href="https://flowdeck.site/" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Flowdeck" />
+    <meta property="og:url" content="https://flowdeck.site/" />
+    <meta property="og:title" content="Flowdeck: see where the size is sitting" />
+    <meta property="og:description" content="Liquidity heatmap, footprint, delta, big trades and gamma levels for the Bitcoin perpetual. 3 days free, then ₹499 a month." />
+    <meta property="og:image" content="https://flowdeck.site/og.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="The Flowdeck dashboard: a live Bitcoin order-book heatmap with trades drawn as bubbles" />
+    <meta property="og:locale" content="en_IN" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Flowdeck: see where the size is sitting" />
+    <meta name="twitter:description" content="Liquidity heatmap, footprint, delta, big trades and gamma levels for the Bitcoin perpetual. 3 days free." />
+    <meta name="twitter:image" content="https://flowdeck.site/og.jpg" />
+    <meta name="twitter:image:alt" content="The Flowdeck dashboard: a live Bitcoin order-book heatmap with trades drawn as bubbles" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://flowdeck.site/#org","name":"Flowdeck","url":"https://flowdeck.site/","logo":"https://flowdeck.site/icon-512.png"},{"@type":"WebSite","@id":"https://flowdeck.site/#site","name":"Flowdeck","url":"https://flowdeck.site/","publisher":{"@id":"https://flowdeck.site/#org"},"inLanguage":"en"},{"@type":"SoftwareApplication","name":"Flowdeck","url":"https://flowdeck.site/","applicationCategory":"FinanceApplication","operatingSystem":"Web browser","description":"Live order flow for the Bitcoin perpetual: liquidity heatmap, footprint, volume profile, delta, big trades, absorption and options gamma levels, from Binance, Bybit, OKX, Coinbase and Deribit data.","image":"https://flowdeck.site/og.jpg","screenshot":"https://flowdeck.site/og.jpg","offers":{"@type":"Offer","price":"499","priceCurrency":"INR","description":"30 days of live data after a 3-day free trial"},"publisher":{"@id":"https://flowdeck.site/#org"}}]}</script>
+    <script>
+      if (!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) document.documentElement.classList.add('js-rv');
+      // Entrance: armed synchronously so nothing paints in its finished state first. Waits for the fonts (900 ms
+      // ceiling), plays once, then removes its classes so only the static design remains.
+      (function () {
+        if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        var d = document.documentElement, started = false, cleaned = false, bootT = 0, safeT = 0;
+        d.classList.add('anim');
+        function clean() {
+          if (cleaned) return;
+          cleaned = true;
+          clearTimeout(safeT);
+          document.removeEventListener('animationend', onEnd, true);
+          d.classList.remove('anim');
+          d.classList.remove('go');
+        }
+        function onEnd(e) {
+          if (e.animationName === 'pillIn' && e.target.classList && e.target.classList.contains('btn-ghost')) clean();
+        }
+        function start() {
+          if (started) return;
+          started = true;
+          clearTimeout(bootT);
+          document.addEventListener('animationend', onEnd, true);
+          safeT = setTimeout(clean, 2600);
+          d.classList.add('go');
+        }
+        function boot() {
+          bootT = setTimeout(start, 900);
+          if (document.fonts && document.fonts.ready) document.fonts.ready.then(start, start);
+          else start();
+        }
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+        else boot();
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#tools">Skip to content</a>
+
+    <main id="main">
+    <section class="hero" id="top" aria-labelledby="hero-h">
+      <div class="bg" role="img" aria-label="Walls of light line a corridor: blue resting buy orders on the left, amber sell orders on the right, with trades drifting along the price line between them">
+        <video class="bg-video is-active" id="bgVideoA" autoplay muted loop playsinline preload="auto" disablepictureinpicture aria-hidden="true" poster="./src/landing/media/hero-loop-poster.webp">
+          <source src="./src/landing/media/hero-loop-4k.mp4" type="video/mp4" media="(min-width: 1600px) and (min-resolution: 1.5dppx), (min-width: 2600px)" />
+          <source src="./src/landing/media/hero-loop.mp4" type="video/mp4" />
+          <source src="./src/landing/media/hero-loop.webm" type="video/webm" />
+        </video>
+        <video class="bg-video" id="bgVideoB" muted loop playsinline preload="auto" disablepictureinpicture aria-hidden="true" poster="./src/landing/media/hero-loop-poster.webp">
+          <source src="./src/landing/media/hero-loop-4k.mp4" type="video/mp4" media="(min-width: 1600px) and (min-resolution: 1.5dppx), (min-width: 2600px)" />
+          <source src="./src/landing/media/hero-loop.mp4" type="video/mp4" />
+          <source src="./src/landing/media/hero-loop.webm" type="video/webm" />
+        </video>
+      </div>
+
+      <header class="nav">
+        <a class="logo" href="/" aria-label="Flowdeck home"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="17" width="5" height="12" rx="1.6" fill="#2f7bff"/><rect x="10" y="10" width="5" height="19" rx="1.6" fill="#56d6ff"/><rect x="17" y="4" width="5" height="25" rx="1.6" fill="#ffb547"/><rect x="24" y="12" width="5" height="17" rx="1.6" fill="#ff3a34"/></svg>Flowdeck</a>
+        <nav class="nav-links" aria-label="Primary">
+          <a href="#tools">Tools</a>
+          <a href="#accuracy">Accuracy</a>
+          <a href="#pricing">Pricing</a>
+          <a href="#film">Film</a>
+          <a href="#questions">Questions</a>
+        </nav>
+        <div class="nav-actions">
+          <a class="btn btn-login" href="/login" data-when="out">Sign in</a>
+          <a class="btn btn-nav-start" href="/signup" data-when="out">Start free trial <svg class="arw" viewBox="0 0 12 10" fill="none" aria-hidden="true"><path d="M0.8 5h10M7.1 1.4 10.9 5l-3.8 3.6" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+          <a class="btn btn-nav-start" href="/app" data-when="in" hidden>Open dashboard <svg class="arw" viewBox="0 0 12 10" fill="none" aria-hidden="true"><path d="M0.8 5h10M7.1 1.4 10.9 5l-3.8 3.6" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+        </div>
+        <button class="burger" id="burger" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="menu"><span></span></button>
+      </header>
+
+      <nav class="menu" id="menu" aria-label="Mobile">
+        <a href="#tools">Tools</a>
+        <a href="#accuracy">Accuracy</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#film">Film</a>
+        <a href="#questions">Questions</a>
+        <div class="divider"></div>
+        <a href="/login" data-when="out">Sign in</a>
+        <a class="m-start" href="/signup" data-when="out">Start free trial <svg class="arw" viewBox="0 0 12 10" fill="none" aria-hidden="true"><path d="M0.8 5h10M7.1 1.4 10.9 5l-3.8 3.6" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+        <a class="m-start" href="/app" data-when="in" hidden>Open dashboard <svg class="arw" viewBox="0 0 12 10" fill="none" aria-hidden="true"><path d="M0.8 5h10M7.1 1.4 10.9 5l-3.8 3.6" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      </nav>
+
+      <div class="hero-inner">
+        <h1 id="hero-h"><span class="ln"><span class="ln-i">See where</span></span> <span class="ln"><span class="ln-i">the size</span></span><span class="ln"><span class="ln-i">is sitting.</span></span></h1>
+        <p class="sub">
+          The Binance Bitcoin perpetual order book as a live heatmap,<br />
+          with every trade, the footprint, delta, absorption and gamma<br />
+          drawn on top. In your browser, for <b data-cfg="price_label">₹499 / month</b>.
+        </p>
+        <div class="ctas">
+          <a class="btn btn-lg btn-primary" href="/signup" data-when="out"><span>Start your <span data-cfg="trial_days">3</span>-day free trial</span> <svg class="arw" viewBox="0 0 12 10" fill="none" aria-hidden="true"><path d="M0.8 5h10M7.1 1.4 10.9 5l-3.8 3.6" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+          <a class="btn btn-lg btn-primary" href="/app" data-when="in" hidden>Open the dashboard <svg class="arw" viewBox="0 0 12 10" fill="none" aria-hidden="true"><path d="M0.8 5h10M7.1 1.4 10.9 5l-3.8 3.6" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+          <a class="btn btn-lg btn-ghost" href="#film" data-film>Watch the film <svg class="play" viewBox="0 0 9 11" aria-hidden="true"><path d="M0.6 0.9v9.2a.6.6 0 0 0 .9.5l7-4.6a.6.6 0 0 0 0-1L1.5.4a.6.6 0 0 0-.9.5z" fill="currentColor"/></svg></a>
+        </div>
+      </div>
+      <button class="bg-toggle" id="bgToggle" type="button" aria-label="Pause the background video" aria-pressed="false">
+        <svg class="i-pause" viewBox="0 0 12 12" aria-hidden="true"><rect x="2.2" y="1.6" width="2.6" height="8.8" rx="1" fill="currentColor"/><rect x="7.2" y="1.6" width="2.6" height="8.8" rx="1" fill="currentColor"/></svg>
+        <svg class="i-play" viewBox="0 0 12 12" aria-hidden="true"><path d="M3.2 1.9v8.2a.6.6 0 0 0 .92.5l6.4-4.1a.6.6 0 0 0 0-1L4.12 1.4a.6.6 0 0 0-.92.5z" fill="currentColor"/></svg>
+      </button>
+    </section>
+
+      <!-- ================================================================ proof -->
+      <section class="proof" aria-label="Accuracy at a glance">
+        <div class="wrap">
+          <ul class="proof-stats rv-group">
+            <li class="rv"><b>24<i>/24</i></b><span>minutes of footprint identical to Binance's own trade record</span></li>
+            <li class="rv"><b>0</b><span>missing trades across 56,860 checked</span></li>
+            <li class="rv"><b>64<i> ms</i></b><span>typical delay from Binance to our server</span></li>
+            <li class="rv"><b>5</b><span>exchanges streaming live into one screen</span></li>
+          </ul>
+          <p class="proof-venues rv">Live data from <span>Binance</span><span>Bybit</span><span>OKX</span><span>Coinbase</span><span>Deribit</span></p>
+        </div>
+      </section>
+
+      <!-- ================================================================ product -->
+      <section class="product" id="product" aria-label="The dashboard">
+        <div class="product-stage">
+          <figure class="window">
+            <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span class="url">flowdeck / app</span></div>
+            <img src="./src/landing/shots/overview-1600.webp"
+              srcset="./src/landing/shots/overview-1600.webp 1600w, ./src/landing/shots/overview-3200.webp 3200w"
+              sizes="(max-width: 1280px) 96vw, 1240px" width="1600" height="900" decoding="async"
+              alt="The Flowdeck dashboard: order-book heatmap with trade bubbles, price ladder, trade tape and CVD pane" />
+            <span class="callout c1" style="--x: 30%; --y: 31%">Trades as bubbles, sized by volume</span>
+            <span class="callout c2" style="--x: 55%; --y: 72%">Resting orders, brighter means bigger</span>
+            <span class="callout c3" style="--x: 85%; --y: 52%">Every print from four exchanges</span>
+          </figure>
+        </div>
+      </section>
+
+      <!-- ================================================================ film -->
+      <section class="film" id="film" aria-labelledby="film-h">
+        <div class="wrap film-in">
+          <div class="film-copy">
+            <h2 id="film-h" class="rise"><span>One minute. The whole product.</span></h2>
+            <p class="rv">From the heatmap to the footprint, gamma levels, the accuracy checks and the free trial. Turn the sound on.</p>
+          </div>
+          <div class="film-player rv" id="player">
+            <video id="film-video" preload="none" playsinline poster="./src/landing/media/film-poster.webp" aria-label="Flowdeck film, 60 seconds"></video>
+            <button class="film-play" id="film-play" aria-label="Play the film">
+              <span aria-hidden="true"><svg width="22" height="26" viewBox="0 0 10 12"><path d="M0 0l10 6-10 6z" fill="currentColor" /></svg></span>
+              <b>Play film</b><small>1:00, sound on</small>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================ tools -->
+      <section class="tools" id="tools" aria-labelledby="tools-h">
+        <div class="wrap">
+          <div class="sec-head">
+            <h2 id="tools-h" class="rise"><span>Eight tools. One screen.</span></h2>
+            <p class="rv">They all run side by side in one dashboard, on the live Bitcoin perpetual. Pick one to see how it reads.</p>
+          </div>
+          <div class="showcase rv" id="showcase">
+            <div class="sc-list" role="tablist" aria-label="Flowdeck tools" aria-orientation="vertical">
+            <button class="sc-tab" type="button" role="tab" id="sc-tab-heat" aria-controls="sc-panel" aria-selected="false" data-viz="heat" data-sr="Illustration: an order-book heatmap scrolls left. Price moves between bright walls of resting orders; one wall is pulled as price nears it, and trades appear as bubbles on the price line.">
+              <span class="sc-name">Liquidity heatmap</span>
+              <span class="sc-desc">Every resting limit order, redrawn four times a second. Walls that hold stay bright; pulled walls vanish, so spoofing shows as it happens.</span>
+              <span class="sc-bar" aria-hidden="true"><i></i></span>
+            </button>
+            <button class="sc-tab" type="button" role="tab" id="sc-tab-trades" aria-controls="sc-panel" aria-selected="false" data-viz="trades" data-sr="Illustration: trades print on the price line as bubbles; filled bubbles are buys, rings are sells, the biggest are labelled with size and exchange.">
+              <span class="sc-name">Big trades</span>
+              <span class="sc-desc">Market orders above your size, as bubbles sized by volume, from Binance, Bybit, OKX and Coinbase.</span>
+              <span class="sc-bar" aria-hidden="true"><i></i></span>
+            </button>
+            <button class="sc-tab" type="button" role="tab" id="sc-tab-footprint" aria-controls="sc-panel" aria-selected="false" data-viz="footprint" data-sr="Illustration: candles split into price rows showing sell and buy volume; imbalances are highlighted and the busiest row in each candle is boxed.">
+              <span class="sc-name">Footprint</span>
+              <span class="sc-desc">Buy and sell volume at every price inside each candle, with imbalances and the busiest price marked.</span>
+              <span class="sc-bar" aria-hidden="true"><i></i></span>
+            </button>
+            <button class="sc-tab" type="button" role="tab" id="sc-tab-profile" aria-controls="sc-panel" aria-selected="false" data-viz="profile" data-sr="Illustration: a volume profile builds beside the price line, with the point of control and the value area high and low marked.">
+              <span class="sc-name">Volume profile and TPO</span>
+              <span class="sc-desc">Where the volume actually traded: value area, point of control and naked POCs from earlier sessions.</span>
+              <span class="sc-bar" aria-hidden="true"><i></i></span>
+            </button>
+            <button class="sc-tab" type="button" role="tab" id="sc-tab-delta" aria-controls="sc-panel" aria-selected="false" data-viz="delta" data-sr="Illustration: delta bars above and below a zero line with cumulative volume delta lines for perps and spot.">
+              <span class="sc-name">Delta and CVD</span>
+              <span class="sc-desc">Who was aggressive, bar by bar, and whether perps or spot are leading the move.</span>
+              <span class="sc-bar" aria-hidden="true"><i></i></span>
+            </button>
+            <button class="sc-tab" type="button" role="tab" id="sc-tab-absorption" aria-controls="sc-panel" aria-selected="false" data-viz="absorption" data-sr="Illustration: price falls into a bid wall, sell orders hit it without breaking it, price turns up and an absorption marker is scored.">
+              <span class="sc-name">Absorption</span>
+              <span class="sc-desc">Heavy selling into a level that holds, flagged as it happens and scored 60 seconds later.</span>
+              <span class="sc-bar" aria-hidden="true"><i></i></span>
+            </button>
+            <button class="sc-tab" type="button" role="tab" id="sc-tab-gamma" aria-controls="sc-panel" aria-selected="false" data-viz="gamma" data-sr="Illustration: gamma exposure bars by strike, negative to the left and positive to the right, with the call wall, put wall, gamma flip and max pain marked against the price.">
+              <span class="sc-name">Options gamma</span>
+              <span class="sc-desc">Call wall, put wall, gamma flip and max pain from the Deribit options chain, drawn on your chart.</span>
+              <span class="sc-bar" aria-hidden="true"><i></i></span>
+            </button>
+            <button class="sc-tab" type="button" role="tab" id="sc-tab-venues" aria-controls="sc-panel" aria-selected="false" data-viz="venues" data-sr="Illustration: four exchange prices tracking each other with the gap between them shaded, plus open interest, funding and the Coinbase premium.">
+              <span class="sc-name">Four exchanges side by side</span>
+              <span class="sc-desc">Binance, Bybit, OKX and Coinbase on one chart, with open interest, funding and the Coinbase premium.</span>
+              <span class="sc-bar" aria-hidden="true"><i></i></span>
+            </button>
+            </div>
+            <div class="sc-stage">
+              <div class="sc-panel" id="sc-panel" role="tabpanel" tabindex="0" aria-labelledby="sc-tab-heat">
+                <div class="sc-canvas"></div>
+                <p class="sr sc-sr" aria-live="polite"></p>
+              </div>
+              <p class="sc-caption"></p>
+              <div class="sc-controls">
+                <p class="sc-note">Illustrations of how each tool reads. In the app they run on live market data.</p>
+                <button class="sc-toggle" type="button" aria-pressed="false" aria-label="Pause the tool tour">
+                  <svg class="i-pause" viewBox="0 0 12 12" aria-hidden="true"><rect x="2.2" y="1.6" width="2.6" height="8.8" rx="1" fill="currentColor"/><rect x="7.2" y="1.6" width="2.6" height="8.8" rx="1" fill="currentColor"/></svg>
+                  <svg class="i-play" viewBox="0 0 12 12" aria-hidden="true"><path d="M3.2 1.9v8.2a.6.6 0 0 0 .92.5l6.4-4.1a.6.6 0 0 0 0-1L4.12 1.4a.6.6 0 0 0-.92.5z" fill="currentColor"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================ accuracy -->
+      <section class="accuracy" id="accuracy" aria-labelledby="acc-h">
+        <div class="wrap acc-in">
+          <div class="acc-copy">
+            <h2 id="acc-h" class="rise"><span>Graded against the exchanges, minute by minute.</span></h2>
+            <p class="rv">A heatmap is only worth something if the numbers under it are right. On 2 and 3 October 2026 we ran the engine on the live market and compared every figure with each exchange's own records. The same checks keep running inside the server.</p>
+            <p class="acc-honest rv">One thing we won't oversell: absorption is a pattern, not a prediction. Half of the signals in the test held after 60 seconds. Read it as context.</p>
+          </div>
+          <ol class="ledger" aria-label="Test results">
+            <li style="--i: 0">
+              <svg class="tick" viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="12.5" /><path d="M8.6 14.4l3.6 3.6 7.2-7.6" /></svg>
+              <p class="l-what"><b>Minutes of footprint identical to Binance's trade tape</b><span>Buy and sell volume at every price, 56,860 trades</span></p>
+              <p class="l-res"><b data-count="24">24</b><i>/24</i></p>
+            </li>
+            <li style="--i: 1">
+              <svg class="tick" viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="12.5" /><path d="M8.6 14.4l3.6 3.6 7.2-7.6" /></svg>
+              <p class="l-what"><b>Trades missing from Binance's feed</b><span>Checked against the exchange's trade ID sequence</span></p>
+              <p class="l-res"><b>0</b></p>
+            </li>
+            <li style="--i: 2">
+              <svg class="tick" viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="12.5" /><path d="M8.6 14.4l3.6 3.6 7.2-7.6" /></svg>
+              <p class="l-what"><b>Wrong sizes in the order book</b><span>Compared level by level with 51 snapshots from Binance</span></p>
+              <p class="l-res"><b>0</b></p>
+            </li>
+            <li style="--i: 3">
+              <svg class="tick" viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="12.5" /><path d="M8.6 14.4l3.6 3.6 7.2-7.6" /></svg>
+              <p class="l-what"><b>Coinbase trades matched on price, size and side</b><span>Against Coinbase's own record of every trade</span></p>
+              <p class="l-res"><b data-count="9512">9,512</b><i>/9,512</i></p>
+            </li>
+            <li style="--i: 4">
+              <svg class="tick" viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="12.5" /><path d="M8.6 14.4l3.6 3.6 7.2-7.6" /></svg>
+              <p class="l-what"><b>Option gammas equal to Deribit's</b><span>The 60 options with the most open interest</span></p>
+              <p class="l-res"><b data-count="60">60</b><i>/60</i></p>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- ================================================================ devices -->
+      <section class="devices wrap" id="speed" aria-labelledby="dev-h">
+        <div class="sec-head">
+          <h2 id="dev-h" class="rise"><span>Opens in a tab. Fits in a pocket.</span></h2>
+          <p class="rv">Desktop order-flow platforms make your computer do the work. Flowdeck does it on our server and sends your browser the finished picture.</p>
+        </div>
+        <div class="dev-stage rv">
+          <figure class="laptop">
+            <div class="laptop-screen"><img src="./src/landing/shots/overview-1600.webp" srcset="./src/landing/shots/overview-1600.webp 1600w, ./src/landing/shots/overview-3200.webp 3200w" sizes="(max-width: 1080px) 82vw, 880px" width="1600" height="900" loading="lazy" decoding="async" alt="The dashboard on a laptop" /></div>
+            <div class="laptop-base" aria-hidden="true"></div>
+          </figure>
+          <figure class="phone">
+            <img src="./src/landing/shots/mobile-780.webp" srcset="./src/landing/shots/mobile-780.webp 780w, ./src/landing/shots/mobile-1170.webp 1170w" sizes="(max-width: 720px) 34vw, 260px" width="390" height="844" loading="lazy" decoding="async" alt="The dashboard on a phone" />
+          </figure>
+        </div>
+        <ul class="specs rv-group">
+          <li class="rv"><b>230 KB</b><span>to open the dashboard. Nothing to install.</span></li>
+          <li class="rv"><b>250 ms</b><span>between heatmap columns.</span></li>
+          <li class="rv"><b>100 ms</b><span>order-book updates, straight from Binance.</span></li>
+          <li class="rv"><b>Any browser</b><span>Chrome, Edge, Safari or Firefox, on Windows, Mac, Android or iPhone.</span></li>
+        </ul>
+        <p class="dev-note">For comparison, Bookmap asks for a desktop install, at least 8 GB of RAM and 10 GB of free disk.</p>
+      </section>
+
+      <!-- ================================================================ pricing -->
+      <section class="pricing" id="pricing" aria-labelledby="price-h">
+        <div class="wrap">
+          <div class="sec-head">
+            <h2 id="price-h" class="rise"><span>One plan. Everything in it.</span></h2>
+            <p class="rv">No add-ons, no data fees, no lifetime licence to upsell.</p>
+          </div>
+          <div class="price-grid">
+            <div class="price-card rv">
+              <p class="price-name">Flowdeck</p>
+              <p class="price-amount"><span data-cfg="price_label">₹499 / month</span></p>
+              <ul class="price-list">
+                <li>Liquidity heatmap, footprint, profiles, delta and CVD</li>
+                <li>Big trades, absorption and liquidations</li>
+                <li>Options gamma levels from Deribit</li>
+                <li>Binance, Bybit, OKX and Coinbase together</li>
+                <li>Works on laptop, tablet and phone</li>
+              </ul>
+              <a class="btn btn-signal btn-lg wide" href="/signup" data-when="out"><span>Start your <span data-cfg="trial_days">3</span>-day free trial</span></a>
+              <a class="btn btn-signal btn-lg wide" href="/app" data-when="in" hidden>Open the dashboard</a>
+              <p class="price-fine">Pay by UPI when the trial ends and your account is extended the same day.</p>
+            </div>
+            <figure class="bars rv" aria-labelledby="bars-cap">
+              <figcaption id="bars-cap">What a comparable toolkit costs per month, billed monthly</figcaption>
+              <ol>
+                <li class="us" style="--v: 499"><span class="b-name"><b>Flowdeck</b> everything</span><span class="b-track"><i></i></span><span class="b-val">₹499</span></li>
+                <li style="--v: 2706"><span class="b-name"><b>ATAS</b> Plus, €24.95</span><span class="b-track"><i></i></span><span class="b-val">₹2,706</span></li>
+                <li style="--v: 3036"><span class="b-name"><b>Exocharts</b> Web Premium, €28</span><span class="b-track"><i></i></span><span class="b-val">₹3,036</span></li>
+                <li style="--v: 4711"><span class="b-name"><b>Bookmap</b> Global, $49</span><span class="b-track"><i></i></span><span class="b-val">₹4,711</span></li>
+                <li style="--v: 7585"><span class="b-name"><b>ATAS</b> Pro, €69.95</span><span class="b-track"><i></i></span><span class="b-val">₹7,585</span></li>
+                <li style="--v: 9518"><span class="b-name"><b>Bookmap</b> Global Plus, $99</span><span class="b-track"><i></i></span><span class="b-val">₹9,518</span></li>
+              </ol>
+              <p class="fine">
+                Those platforms cover futures, stocks and hundreds of crypto pairs; Flowdeck covers the Bitcoin perpetual only.
+                Prices from each vendor's pricing page on 4 October 2026, before tax, at ₹96.14 per US dollar and ₹108.44 per euro.
+                All three have limited free tiers, and paying for six months or a year up front cuts their price by about 18 to 43 percent.
+              </p>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================ trial -->
+      <section class="trial wrap" aria-labelledby="trial-h">
+        <h2 id="trial-h" class="rise"><span>How the free trial works</span></h2>
+        <ol class="steps">
+          <li style="--i: 0"><span class="step-n">1</span><h3>Create an account</h3><p>Name, email and a password. Thirty seconds, no card.</p></li>
+          <li style="--i: 1"><span class="step-n">2</span><h3>Use everything for <span data-cfg="trial_days">3</span> days</h3><p>Heatmap, footprint, gamma levels, all four exchanges. Nothing is held back.</p></li>
+          <li style="--i: 2"><span class="step-n">3</span><h3>Keep it for <span data-cfg="price_label">₹499 / month</span></h3><p>Message us on WhatsApp or email from inside the app and pay by UPI. If you don't, nothing is charged and the dashboard simply stops updating.</p></li>
+        </ol>
+      </section>
+
+      <!-- ================================================================ questions -->
+      <section class="faq wrap" id="questions" aria-labelledby="faq-h">
+        <h2 id="faq-h" class="rise"><span>Questions people ask first</span></h2>
+        <div class="faq-list rv-group">
+          <details class="rv">
+            <summary>What happens when the trial ends?</summary>
+            <p>Live updates stop. The dashboard still opens, frozen on the market as it looked when you opened it. Once your account is extended it goes live again within a few seconds, without signing in again.</p>
+          </details>
+          <details class="rv">
+            <summary>Can I use one account on two devices?</summary>
+            <p>One at a time. Signing in on a new device signs the old one out automatically, and a second tab takes over from the first. That rule is part of why the price can stay this low.</p>
+          </details>
+          <details class="rv">
+            <summary>Which markets does it cover?</summary>
+            <p>The Binance BTCUSDT perpetual by default, and the Binance BTCUSD coin-margined perpetual. Trades, open interest, funding and liquidations also come in from Bybit, OKX, Binance spot and Coinbase, and the gamma levels come from Deribit options. No altcoins, no stocks.</p>
+          </details>
+          <details class="rv">
+            <summary>Is it really live?</summary>
+            <p>Yes. The data comes from the exchanges' public feeds: the order book every 100 ms and every trade as it prints. The typical delay from Binance to our server is 64 ms; your own internet adds a little on top.</p>
+          </details>
+          <details class="rv">
+            <summary>How do I pay?</summary>
+            <p>When your trial ends, the dashboard shows WhatsApp and email buttons with your account email filled in. Pay by UPI or bank transfer and your account is extended by 30 days, usually within a few hours.</p>
+          </details>
+          <details class="rv">
+            <summary>Will it tell me what to trade?</summary>
+            <p>No. Flowdeck shows market data and a few model-based levels, like gamma walls and absorption. It's a way to see what other traders are doing, not a signal service, and nothing here is financial advice.</p>
+          </details>
+        </div>
+      </section>
+
+      <!-- ================================================================ final -->
+      <section class="final" aria-labelledby="final-h">
+        <div class="final-heat" aria-hidden="true"></div>
+        <h2 id="final-h" class="rise"><span>Stop guessing where the size is.</span></h2>
+        <div class="hero-cta center rv">
+          <a class="btn btn-signal btn-lg" href="/signup" data-when="out"><span>Start your <span data-cfg="trial_days">3</span>-day free trial</span></a>
+          <a class="btn btn-line btn-lg" href="/login" data-when="out">Sign in</a>
+          <a class="btn btn-signal btn-lg" href="/app" data-when="in" hidden>Open the dashboard</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <div class="wrap foot-in">
+        <div>
+          <a class="brandmark" href="/">
+            <svg width="20" height="20" viewBox="0 0 32 32" aria-hidden="true">
+              <rect x="3" y="17" width="5" height="12" rx="1.6" fill="#2f7bff" />
+              <rect x="10" y="10" width="5" height="19" rx="1.6" fill="#56d6ff" />
+              <rect x="17" y="4" width="5" height="25" rx="1.6" fill="#ffb547" />
+              <rect x="24" y="12" width="5" height="17" rx="1.6" fill="#ff3a34" />
+            </svg>
+            Flowdeck
+          </a>
+          <p class="foot-tag">Order flow for the Bitcoin perpetual.</p>
+        </div>
+        <nav class="foot-nav" aria-label="Footer">
+          <a href="/signup">Create an account</a>
+          <a href="/login">Sign in</a>
+          <a href="#tools">Tools</a>
+          <a href="#pricing">Pricing</a>
+          <a href="#" id="foot-wa" hidden target="_blank" rel="noopener noreferrer">WhatsApp</a>
+          <a href="#" id="foot-mail" hidden>Email</a>
+          <a href="/privacy">Privacy</a>
+          <a href="/terms">Terms</a>
+        </nav>
+        <p class="foot-legal">Market data from the public APIs of Binance, Bybit, OKX, Coinbase and Deribit. Flowdeck isn't affiliated with any of them. Nothing here is financial advice. &copy; <span id="year">2026</span> Flowdeck</p>
+      </div>
+    </footer>
+
+
+    <script>
+      // Mobile menu
+      (function () {
+        var burger = document.getElementById('burger'), menu = document.getElementById('menu');
+        if (!burger || !menu) return;
+        function set(open) {
+          menu.classList.toggle('open', open);
+          burger.setAttribute('aria-expanded', open ? 'true' : 'false');
+          burger.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+        }
+        burger.addEventListener('click', function (e) { e.stopPropagation(); set(!menu.classList.contains('open')); });
+        menu.addEventListener('click', function (e) { if (e.target.closest && e.target.closest('a')) set(false); });
+        document.addEventListener('click', function (e) {
+          if (menu.classList.contains('open') && !menu.contains(e.target) && !burger.contains(e.target)) set(false);
+        });
+        document.addEventListener('keydown', function (e) {
+          if (e.key === 'Escape' && menu.classList.contains('open')) { set(false); burger.focus(); }
+        });
+      })();
+    </script>
+    <script type="module" src="/src/landing/main.ts"></script>
+    <script>
+      // Background video: two copies cross-fade at the loop point so the wrap never shows
+      (function () {
+        var A = document.getElementById('bgVideoA'), B = document.getElementById('bgVideoB');
+        if (!A || !B) return;
+        if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          A.removeAttribute('autoplay');
+          A.pause(); B.pause();
+          try { A.currentTime = 0; } catch (e) {}
+          return;
+        }
+        var FADE = 0.9, cur = A, nxt = B, swapping = false, userPaused = false, onScreen = true;
+        function play(v) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
+        play(A);
+        // pause button, and no decoding while the hero is scrolled out of view
+        var toggle = document.getElementById('bgToggle');
+        function sync() {
+          if (userPaused || !onScreen) cur.pause(); else play(cur);
+          if (toggle) {
+            toggle.classList.toggle('is-paused', userPaused);
+            toggle.setAttribute('aria-pressed', userPaused ? 'true' : 'false');
+            toggle.setAttribute('aria-label', userPaused ? 'Play the background video' : 'Pause the background video');
+          }
+        }
+        if (toggle) toggle.addEventListener('click', function () { userPaused = !userPaused; sync(); });
+        if ('IntersectionObserver' in window) {
+          new IntersectionObserver(function (es) { onScreen = es[0].isIntersecting; sync(); }).observe(A.closest('.hero'));
+        }
+        function tick() {
+          if (swapping || !cur.duration) return;
+          if (cur.duration - cur.currentTime > FADE) return;
+          swapping = true;
+          var out = cur;
+          nxt.currentTime = 0;
+          play(nxt);
+          nxt.classList.add('is-active');
+          out.classList.remove('is-active');
+          cur = nxt; nxt = out;
+          setTimeout(function () { out.pause(); out.currentTime = 0; swapping = false; }, FADE * 1000 + 100);
+        }
+        A.addEventListener('timeupdate', tick);
+        B.addEventListener('timeupdate', tick);
+      })();
+    </script>
+  </body>
+</html>

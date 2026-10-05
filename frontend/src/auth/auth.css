@@ -1,0 +1,65 @@
+/* Sign in / sign up, in the landing page's language: Plus Jakarta Sans, pure black, white pill for the main action,
+   and the hero's loop of liquidity walls in the side panel. */
+:root { --display: 'PJS', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; --body: 'PJS', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+body { background: #000; font-family: var(--body); -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+.btn { font-weight: 500; letter-spacing: -0.01em; }
+.btn-signal { background: #fdfdfd; color: #050505; box-shadow: none; }
+.btn-signal:hover { background: #fff; box-shadow: none; }
+.brandmark { font: 800 22px/1 var(--display); letter-spacing: -0.03em; }
+.auth { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(400px, 0.9fr); }
+
+/* --drop: how far the loop sits below the top of the panel, so the quote gets the dark sky above the walls and the
+   facts the dark floor below them. Less on short screens, where the panel has less room for both. */
+.auth-art { --drop: clamp(8%, 41vh - 210px, 22%); position: relative; border-right: 1px solid rgba(255, 255, 255, 0.08); overflow: hidden; background: #000; }
+.auth-loop { position: absolute; left: 0; right: 0; top: var(--drop); width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%; display: block;
+  -webkit-mask: linear-gradient(180deg, transparent 0, #000 18%); mask: linear-gradient(180deg, transparent 0, #000 18%); }
+.auth-art::after { content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0) 30%, rgba(0, 0, 0, 0) 70%, rgba(0, 0, 0, 0.9) 100%); }
+.auth-art-copy { position: relative; z-index: 1; display: flex; flex-direction: column; height: 100%; padding: 40px 48px; }
+.auth-quote { font: 500 clamp(28px, 1.6vw + 12px, 44px)/1.08 var(--display); max-width: 17ch; margin: clamp(36px, 6vh, 72px) 0 auto; letter-spacing: -0.035em; text-wrap: balance; }
+.auth-facts { list-style: none; margin: 32px 0 0; padding: 0; display: grid; gap: 6px; font-size: 16px; color: var(--fog); }
+.auth-facts b { color: var(--paper); font-weight: 600; }
+
+.auth-main { display: grid; align-content: center; justify-items: center; padding: 40px 24px; }
+.auth-top { display: none; }
+.auth-card { width: min(420px, 100%); display: grid; gap: 14px; }
+.auth-card h1 { margin: 6px 0 0; font: 500 42px/1.04 var(--display); letter-spacing: -0.035em; }
+.auth-sub { margin: 0 0 6px; color: var(--fog); font-size: 16px; }
+.auth-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.auth-tabs button { background: none; border: 0; padding: 10px 2px; margin-right: 18px; color: var(--mute); font-weight: 500; cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.auth-tabs button[aria-selected='true'] { color: var(--paper); border-bottom-color: #fdfdfd; }
+.auth form { display: grid; gap: 16px; }
+.auth label { display: grid; gap: 6px; font-size: 14px; color: var(--fog); }
+.auth label small { color: var(--mute); font-size: 13px; }
+.auth input { width: 100%; height: 48px; padding: 0 14px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.14); background: #0c0c0d;
+  color: var(--paper); font-size: 16px; }
+.auth input:focus { border-color: var(--signal); outline: none; box-shadow: 0 0 0 3px rgba(255, 181, 71, 0.18); }
+.pw { position: relative; display: block; }
+.pw input { padding-right: 64px; }
+.pw button { position: absolute; right: 6px; top: 7px; height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: rgba(255, 255, 255, 0.08);
+  color: var(--fog); font-size: 13px; cursor: pointer; }
+.btn.wide { width: 100%; margin-top: 4px; }
+.btn[disabled] { opacity: 0.7; cursor: progress; }
+.auth-error { margin: 0; padding: 10px 12px; border-radius: 12px; background: rgba(255, 91, 91, 0.1); border: 1px solid rgba(255, 91, 91, 0.35); color: #ffb3b3; font-size: 15px; }
+.auth-note { margin: 0; padding: 10px 12px; border-radius: 12px; background: rgba(255, 181, 71, 0.08); border: 1px solid rgba(255, 181, 71, 0.3); color: #f5dfb6; font-size: 15px; }
+.auth-switch { margin: 6px 0 0; color: var(--fog); font-size: 15px; }
+.auth-fine { margin: 0; color: var(--mute); font-size: 13px; }
+.auth-fine a { color: var(--fog); text-decoration: underline; text-decoration-color: rgba(255, 255, 255, 0.3); text-underline-offset: 3px; }
+.auth-fine a:hover { color: var(--paper); text-decoration-color: currentColor; }
+/* Google draws its own button in an iframe; keep its 44px row reserved so the form doesn't jump when it loads */
+.gbtn { min-height: 44px; display: flex; justify-content: center; align-items: center; color-scheme: normal; }
+.auth-or { display: flex; align-items: center; gap: 14px; color: var(--mute); font-size: 13px; }
+.auth-or::before, .auth-or::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.linklike { background: none; border: 0; padding: 0; color: #fff; font-weight: 600; cursor: pointer; text-decoration: underline; text-decoration-color: rgba(255, 255, 255, 0.4); text-underline-offset: 3px; }
+.linklike:hover { text-decoration-color: #fff; }
+.signed-in { display: grid; gap: 12px; justify-items: start; }
+.signed-in p { margin: 0; color: var(--fog); }
+
+@media (max-width: 900px) {
+  .auth { grid-template-columns: 1fr; }
+  .auth-art { display: none; }
+  .auth-main { align-content: start; padding-top: 28px; }
+  .auth-top { display: block; width: min(420px, 100%); margin-bottom: 32px; }
+}
+

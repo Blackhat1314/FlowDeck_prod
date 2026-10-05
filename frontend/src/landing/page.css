@@ -1,0 +1,5 @@
+/* The landing page's styles in the order they must apply. Imported as one file so the build keeps this order
+   (a stylesheet imported by two pages becomes a shared file that the build links after the page's own). */
+@import '../shared/fresh.css';
+@import './hero.css';
+@import './landing.css';

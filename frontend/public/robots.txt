@@ -1,0 +1,9 @@
+# Flowdeck: the public pages are open to search engines; the dashboard, admin panel and API are not.
+User-agent: *
+Allow: /
+Disallow: /app
+Disallow: /admin
+Disallow: /api/
+Disallow: /ws
+
+Sitemap: https://flowdeck.site/sitemap.xml

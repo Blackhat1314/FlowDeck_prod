@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Flowdeck film</title>
+    <style>
+      html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #04050a; }
+      #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; }
+      #gl { position: absolute; inset: 0; width: 1920px; height: 1080px; display: block; }
+      #ui { position: absolute; inset: 0; pointer-events: none; }
+    </style>
+  </head>
+  <body>
+    <div id="stage">
+      <canvas id="gl" width="1920" height="1080"></canvas>
+      <div id="ui"></div>
+    </div>
+    <script type="module" src="./film.ts"></script>
+  </body>
+</html>

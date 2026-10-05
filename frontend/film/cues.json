@@ -1,0 +1,170 @@
+[
+ {
+  "i": 0,
+  "sec": "A",
+  "text": "Every second, thousands of Bitcoin orders wait in the dark.",
+  "start": 0.9,
+  "end": 4.66
+ },
+ {
+  "i": 1,
+  "sec": "B",
+  "text": "Walls are built.",
+  "start": 5.296,
+  "end": 6.246
+ },
+ {
+  "i": 2,
+  "sec": "B",
+  "text": "Walls are pulled.",
+  "start": 6.784,
+  "end": 7.834
+ },
+ {
+  "i": 3,
+  "sec": "B",
+  "text": "And most traders never see it.",
+  "start": 8.261,
+  "end": 10.001
+ },
+ {
+  "i": 4,
+  "sec": "C",
+  "text": "Flowdeck turns the order book into light.",
+  "start": 10.808,
+  "end": 13.318
+ },
+ {
+  "i": 5,
+  "sec": "D",
+  "text": "A live heatmap of every resting order on the Binance Bitcoin perpetual.",
+  "start": 13.813,
+  "end": 18.263
+ },
+ {
+  "i": 6,
+  "sec": "E",
+  "text": "Trades burst as bubbles.",
+  "start": 19.129,
+  "end": 21.029
+ },
+ {
+  "i": 7,
+  "sec": "E",
+  "text": "Footprint.",
+  "start": 21.149,
+  "end": 21.779
+ },
+ {
+  "i": 8,
+  "sec": "E",
+  "text": "Delta.",
+  "start": 22.275,
+  "end": 22.865
+ },
+ {
+  "i": 9,
+  "sec": "E",
+  "text": "And volume profile.",
+  "start": 23.315,
+  "end": 24.585
+ },
+ {
+  "i": 10,
+  "sec": "E",
+  "text": "Tick by tick.",
+  "start": 25.092,
+  "end": 26.112
+ },
+ {
+  "i": 11,
+  "sec": "F",
+  "text": "Options gamma levels from Deribit, drawn right on the chart.",
+  "start": 26.957,
+  "end": 30.487
+ },
+ {
+  "i": 12,
+  "sec": "G",
+  "text": "Every number is checked against the exchange.",
+  "start": 31.557,
+  "end": 34.107
+ },
+ {
+  "i": 13,
+  "sec": "G",
+  "text": "Twenty-four of twenty-four minutes.",
+  "start": 34.37,
+  "end": 36.3
+ },
+ {
+  "i": 14,
+  "sec": "G",
+  "text": "Identical.",
+  "start": 36.789,
+  "end": 37.649
+ },
+ {
+  "i": 15,
+  "sec": "H",
+  "text": "No downloads.",
+  "start": 38.585,
+  "end": 39.535
+ },
+ {
+  "i": 16,
+  "sec": "H",
+  "text": "No eight-gigabyte installs.",
+  "start": 40.066,
+  "end": 41.776
+ },
+ {
+  "i": 17,
+  "sec": "H",
+  "text": "A browser tab,",
+  "start": 42.344,
+  "end": 43.364
+ },
+ {
+  "i": 18,
+  "sec": "H",
+  "text": "on your desk,",
+  "start": 43.842,
+  "end": 44.642
+ },
+ {
+  "i": 19,
+  "sec": "H",
+  "text": "or in your pocket.",
+  "start": 45.07,
+  "end": 45.98
+ },
+ {
+  "i": 20,
+  "sec": "I",
+  "text": "Start free for three days.",
+  "start": 47.152,
+  "end": 48.992
+ },
+ {
+  "i": 21,
+  "sec": "I",
+  "text": "Then four hundred and ninety-nine rupees a month.",
+  "start": 49.207,
+  "end": 51.497
+ },
+ {
+  "i": 22,
+  "sec": "J",
+  "text": "Flowdeck.",
+  "start": 53.069,
+  "end": 53.829
+ },
+ {
+  "i": 23,
+  "sec": "J",
+  "text": "See where the size is sitting.",
+  "start": 54.102,
+  "end": 55.972
+ }
+]

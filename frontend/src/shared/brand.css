@@ -1,0 +1,65 @@
+/* Brand tokens for the public pages (landing, sign in). Colours come from the heatmap itself. */
+@import '@fontsource/barlow-condensed/latin-500.css';
+@import '@fontsource/barlow-condensed/latin-600.css';
+@import '@fontsource/barlow-condensed/latin-700.css';
+@import '@fontsource/ibm-plex-sans/latin-400.css';
+@import '@fontsource/ibm-plex-sans/latin-500.css';
+@import '@fontsource/ibm-plex-sans/latin-600.css';
+
+:root {
+  --ink: #0f171c;        /* page */
+  --slate: #182228;      /* heatmap base, raised surfaces */
+  --slate-2: #1f2c33;
+  --steel: #1c5c7e;      /* heat blue */
+  --fog: #a3b2b5;        /* secondary text */
+  --mute: #6f8286;       /* tertiary text */
+  --paper: #e9ecea;      /* primary text */
+  --signal: #e3c84a;     /* heat yellow: actions */
+  --signal-ink: #1d1803;
+  --ember: #e68c30;      /* heat orange */
+  --flare: #ee281e;      /* heat red */
+  --buy: #35e89a;
+  --sell: #ff5b5b;
+  --line: rgba(233, 236, 234, 0.11);
+  --line-2: rgba(233, 236, 234, 0.2);
+  --display: 'Barlow Condensed', 'Arial Narrow', 'Roboto Condensed', sans-serif;
+  --body: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+  --ramp: linear-gradient(90deg, #182228 0%, #1a2e3c 12%, #1a425a 26%, #1c5c7e 38%, #387c9c 48%, #7a969e 55%, #bec4c0 61%, #decc48 68%, #e68c30 80%, #da4e30 91%, #ee281e 100%);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--ink); color: var(--paper); font: 400 17px/1.6 var(--body); -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+img { max-width: 100%; display: block; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; border-radius: 3px; }
+::selection { background: rgba(227, 200, 74, 0.35); }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 46px; padding: 0 22px; border-radius: 4px; border: 1px solid transparent;
+  font: 600 16px/1 var(--body); text-decoration: none; cursor: pointer; white-space: nowrap;
+  transition: transform 0.12s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+.btn:active { transform: translateY(1px); }
+.btn-signal { background: var(--signal); color: var(--signal-ink); }
+.btn-signal:hover { background: #ecd565; }
+.btn-line { border-color: var(--line-2); color: var(--paper); background: transparent; }
+.btn-line:hover { border-color: var(--paper); }
+
+.heatanim { position: relative; overflow: hidden; background: var(--slate); }
+.heatanim-tip {
+  position: absolute; left: 0; top: 0; z-index: 2; pointer-events: none;
+  padding: 6px 10px; border-radius: 3px; background: rgba(15, 23, 28, 0.92); border: 1px solid var(--line-2);
+  font: 500 13px/1.2 var(--body); font-variant-numeric: tabular-nums; color: var(--paper); white-space: nowrap;
+}
+
+.brandmark { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; color: var(--paper);
+  font: 700 24px/1 var(--display); letter-spacing: 0.01em; }
+.brandmark svg { flex: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}

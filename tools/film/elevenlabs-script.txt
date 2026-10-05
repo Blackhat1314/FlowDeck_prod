@@ -1,0 +1,47 @@
+FLOWDECK FILM - ELEVENLABS VOICEOVER
+
+Voice:  David - Movie Trailer Narrator   (backup: Brian)
+Model:  Eleven Multilingual v2
+Speed 0.92 | Stability 50% | Similarity 75% | Style exaggeration 30% | Speaker boost ON
+Output: WAV / PCM 44.1 kHz if your plan allows, otherwise MP3 192 kbps (or the best MP3 offered)
+
+---------------- ONE TAKE (paste everything between the lines) ----------------
+Every second, thousands of Bitcoin orders wait in the dark. <break time="0.8s" />
+Walls are built. <break time="0.3s" /> Walls are pulled. <break time="0.3s" /> And most traders never see it. <break time="0.8s" />
+Flowdeck turns the order book into light. <break time="0.8s" />
+A live heatmap of every resting order on the Binance Bitcoin perpetual. <break time="0.8s" />
+Trades burst as bubbles. <break time="0.3s" /> Footprint. <break time="0.3s" /> Delta. <break time="0.3s" /> And volume profile. <break time="0.3s" /> Tick by tick. <break time="0.8s" />
+Options gamma levels from Deribit, drawn right on the chart. <break time="0.8s" />
+Every number is checked against the exchange. <break time="0.3s" /> Twenty-four of twenty-four minutes. <break time="0.3s" /> Identical. <break time="0.8s" />
+No downloads. <break time="0.3s" /> No eight-gigabyte installs. <break time="0.3s" /> A browser tab, <break time="0.3s" /> on your desk, <break time="0.3s" /> or in your pocket. <break time="0.8s" />
+Start free for three days. <break time="0.3s" /> Then four hundred and ninety-nine rupees a month. <break time="0.8s" />
+Flowdeck. <break time="0.3s" /> See where the size is sitting.
+--------------------------------------------------------------------------------
+
+LINE BY LINE (for retakes) - file name, text, target length in the film
+01  Every second, thousands of Bitcoin orders wait in the dark.          3.6 s
+02  Walls are built.                                                      1.2 s
+03  Walls are pulled.                                                     1.2 s
+04  And most traders never see it.                                        1.8 s
+05  Flowdeck turns the order book into light.                             2.3 s
+06  A live heatmap of every resting order on the Binance Bitcoin perpetual.  4.6 s
+07  Trades burst as bubbles.                                              1.8 s
+08  Footprint.                                                            0.9 s
+09  Delta.                                                                0.8 s
+10  And volume profile.                                                   1.5 s
+11  Tick by tick.                                                         1.1 s
+12  Options gamma levels from Deribit, drawn right on the chart.          3.9 s
+13  Every number is checked against the exchange.                         2.6 s
+14  Twenty-four of twenty-four minutes.                                   2.2 s
+15  Identical.                                                            1.0 s
+16  No downloads.                                                         1.2 s
+17  No eight-gigabyte installs.                                           2.0 s
+18  A browser tab,                                                        1.2 s
+19  on your desk,                                                         1.0 s
+20  or in your pocket.                                                    1.3 s
+21  Start free for three days.                                            1.8 s
+22  Then four hundred and ninety-nine rupees a month.                     3.1 s
+23  Flowdeck.                                                             0.8 s
+24  See where the size is sitting.                                        1.6 s
+
+Pronunciation fixes if needed:  Deribit -> "Deh-ri-bit"   Flowdeck -> "Flow-deck"

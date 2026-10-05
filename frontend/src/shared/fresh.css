@@ -1,0 +1,82 @@
+/* Public-page design tokens (landing, sign-in). Deep blue-black, the order-book heat ramp as the only colour story,
+   Bricolage Grotesque for display and Geist for text. Legacy names at the end keep older page styles working. */
+@import '@fontsource-variable/bricolage-grotesque/index.css';
+@import '@fontsource-variable/geist/index.css';
+
+:root {
+  --void: #05060a;
+  --deep: #090c15;
+  --panel: rgba(255, 255, 255, 0.035);
+  --panel-2: rgba(255, 255, 255, 0.06);
+  --border: rgba(255, 255, 255, 0.085);
+  --border-2: rgba(255, 255, 255, 0.16);
+  --text: #edf1f8;
+  --muted: #9aa3b5;
+  --dim: #677087;
+  --amber: #ffb547;
+  --amber-hi: #ffc76e;
+  --amber-ink: #1f1404;
+  --cyan: #56d6ff;
+  --blue: #2f7bff;
+  --mint: #2ee6a0;
+  --flare: #ff4d6a;
+  --heat: linear-gradient(90deg, #2f7bff 0%, #56d6ff 28%, #e8f4f6 46%, #ffd65c 60%, #ff922e 78%, #ff3a34 100%);
+  --display: 'Bricolage Grotesque Variable', 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
+  --body: 'Geist Variable', 'Geist', 'Segoe UI', system-ui, sans-serif;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --r-lg: 24px;
+  --r-md: 16px;
+
+  /* legacy names used by the sign-in page */
+  --ink: var(--void);
+  --slate: #0d1120;
+  --slate-2: #141a2c;
+  --paper: var(--text);
+  --fog: var(--muted);
+  --mute: var(--dim);
+  --signal: var(--amber);
+  --signal-ink: var(--amber-ink);
+  --ember: #ff922e;
+  --buy: var(--mint);
+  --sell: var(--flare);
+  --line: var(--border);
+  --line-2: var(--border-2);
+  --ramp: var(--heat);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--void); color: var(--text); font: 400 17px/1.6 var(--body); -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+img, video { max-width: 100%; display: block; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; border-radius: 6px; }
+::selection { background: rgba(255, 181, 71, 0.35); }
+[hidden] { display: none !important; }
+
+.btn {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  min-height: 48px; padding: 0 24px; border-radius: 999px; border: 1px solid transparent;
+  font: 600 16px/1 var(--body); letter-spacing: -0.005em; text-decoration: none; cursor: pointer; white-space: nowrap;
+  transition: transform 0.2s var(--ease-out), background-color 0.2s, border-color 0.2s, box-shadow 0.3s;
+}
+.btn:active { transform: translateY(1px) scale(0.99); }
+.btn-signal { background: var(--amber); color: var(--amber-ink);
+  box-shadow: 0 0 0 1px rgba(255, 199, 110, 0.6) inset, 0 10px 30px -10px rgba(255, 160, 50, 0.7); }
+.btn-signal:hover { background: var(--amber-hi); box-shadow: 0 0 0 1px rgba(255, 220, 150, 0.8) inset, 0 14px 40px -10px rgba(255, 160, 50, 0.9); }
+.btn-line { border-color: var(--border-2); color: var(--text); background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.btn-line:hover { border-color: rgba(255, 255, 255, 0.4); background: rgba(255, 255, 255, 0.07); }
+
+.brandmark { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text);
+  font: 650 21px/1 var(--display); letter-spacing: -0.03em; }
+.brandmark svg { flex: none; }
+
+.heatanim { position: relative; overflow: hidden; background: #0d1120; }
+.heatanim-tip { position: absolute; left: 0; top: 0; z-index: 2; pointer-events: none; padding: 6px 10px; border-radius: 8px;
+  background: rgba(5, 6, 10, 0.88); border: 1px solid var(--border-2); font: 500 13px/1.2 var(--body); font-variant-numeric: tabular-nums;
+  color: var(--text); white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}
