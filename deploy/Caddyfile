@@ -1,0 +1,13 @@
+# Caddy gets and renews the HTTPS certificate for these names on its own (Let's Encrypt).
+# __DOMAIN__ is replaced by deploy/setup.sh.
+__DOMAIN__ {
+	reverse_proxy 127.0.0.1:8000
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+}
+
+www.__DOMAIN__ {
+	redir https://__DOMAIN__{uri} permanent
+}

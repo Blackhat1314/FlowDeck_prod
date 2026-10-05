@@ -1,0 +1,24 @@
+# Flowdeck app server. Installed by deploy/setup.sh; listens only on 127.0.0.1:8000, Caddy serves the public site.
+[Unit]
+Description=Flowdeck order-flow server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=flowdeck
+Group=flowdeck
+WorkingDirectory=/opt/flowdeck/src/backend
+EnvironmentFile=/etc/flowdeck/flowdeck.env
+ExecStart=/opt/flowdeck/venv/bin/python run.py --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+# the app may write only its database folder
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/flowdeck
+
+[Install]
+WantedBy=multi-user.target

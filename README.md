@@ -106,11 +106,21 @@ itself (signature against Google's published keys, this site's client ID, issuer
 
 ### Putting it online
 
-1. Use a small Linux VPS (1 vCPU / 1 GB is enough) in a region that can reach Binance futures. US servers can't.
-2. `git clone`, then `cd backend && python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt`.
-3. Run `python run.py --host 127.0.0.1 --port 8000` under systemd or similar so it restarts on reboot.
-4. Put nginx or Caddy in front with HTTPS, and proxy both `/` and the `/ws` websocket to port 8000. Caddy:
-   `example.com { reverse_proxy 127.0.0.1:8000 }`.
+On a fresh Ubuntu 22.04/24.04 server (2 vCPU / 4 GB, in a region that can reach Binance futures; US servers can't),
+with ports 80 and 443 open and the domain's A record pointing at the server, run in its SSH window:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Blackhat1314/FlowDeck_prod/main/deploy/setup.sh -o setup.sh
+sudo bash setup.sh flowdeck.site
+```
+
+`deploy/setup.sh` installs the app from this repository into `/opt/flowdeck`, runs it as the `flowdeck` service
+(restarts on crashes and reboots, listens only on 127.0.0.1:8000), and puts Caddy in front. Caddy gets the HTTPS
+certificate from Let's Encrypt, renews it, redirects `http://` and `www.` to `https://flowdeck.site`, and passes the
+`/ws` websocket through. The database lives in `/var/lib/flowdeck`, the settings in `/etc/flowdeck/flowdeck.env`.
+The script prints the first admin login at the end.
+
+To ship new code: push to `main`, then on the server `sudo bash /opt/flowdeck/src/deploy/update.sh`.
 
 | Setting | Use |
 |---|---|
