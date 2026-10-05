@@ -82,6 +82,7 @@ export function Settings() {
         </div>
       </form>
 
+      <EmailPanel />
       <OwnPassword />
     </section>
   )
@@ -116,6 +117,81 @@ function OwnPassword() {
       </div>
       {msg && <p className={msg.ok ? 'ok-line' : 'err-line'} role="status">{msg.t}</p>}
       <div className="save-bar"><button className="b-primary">{had ? 'Change password' : 'Set password'}</button></div>
+    </form>
+  )
+}
+
+interface MailStatus {
+  enabled: boolean
+  problems: string[]
+  host: string
+  port: number
+  security: string
+  user: string
+  sender: string
+  site_url: string
+  sent_today: number
+  daily_limit: number
+  last_error: string
+  password: boolean
+}
+
+/** Account emails: whether SMTP is set up, today's count, and a test send that reports the server's answer. */
+function EmailPanel() {
+  const [st, setSt] = useState<MailStatus | null>(null)
+  const [to, setTo] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<{ ok: boolean; t: string } | null>(null)
+  const load = () => adminApi<MailStatus>('/api/admin/mail').then(setSt).catch(() => {})
+  useEffect(() => {
+    load()
+    api<Me>('/api/auth/me').then((m) => setTo(m.user.email)).catch(() => {})
+  }, [])
+  const test = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setBusy(true)
+    setMsg(null)
+    try {
+      const r = await adminApi<{ to: string }>('/api/admin/mail/test', { body: { to } })
+      setMsg({ ok: true, t: `Sent to ${r.to}. Check that inbox, and the spam folder if it isn't there in a minute.` })
+    } catch (err) {
+      setMsg({ ok: false, t: err instanceof ApiError ? err.message : 'Could not reach the server.' })
+    }
+    setBusy(false)
+    load()
+  }
+  return (
+    <form className="panel form settings" onSubmit={test}>
+      <h2 className="panel-title">Email</h2>
+      <p className="panel-note">
+        Sends password reset links, a note when a password changes, and an alert when an account signs in from a new device.
+      </p>
+      {st == null ? <p className="dim">Checking…</p> : st.enabled ? (
+        <p className="panel-note">
+          <b>On.</b> Sends as {st.sender} through {st.host}:{st.port} ({st.security === 'tls' ? 'TLS' : st.security === 'starttls' ? 'STARTTLS' : 'no encryption'}),
+          with links to {st.site_url}. {st.sent_today} of {st.daily_limit} sent today; sign-in alerts pause at {Math.floor(st.daily_limit * 0.8)} so
+          reset links always get through.
+        </p>
+      ) : (
+        <div className="panel-note">
+          <b>Off.</b> Users who forget their password are asked to email you, and you set one under Users. To switch email on, add these
+          to the server's settings file (/etc/flowdeck/flowdeck.env) and restart Flowdeck:
+          <ul className="plain-list">{st.problems.map((p) => <li key={p}>{p}</li>)}</ul>
+          SMTP_PORT (587), SMTP_USER and SMTP_PASSWORD come from your email provider.
+        </div>
+      )}
+      {st?.last_error && <p className="err-line">Last failure: {st.last_error}</p>}
+      {st?.enabled && (
+        <>
+          <div className="row2">
+            <label className="fld">Send a test email to
+              <input type="email" value={to} onChange={(e) => setTo(e.target.value)} required />
+            </label>
+          </div>
+          {msg && <p className={msg.ok ? 'ok-line' : 'err-line'} role="status">{msg.t}</p>}
+          <div className="save-bar"><button className="b-primary" disabled={busy}>{busy ? 'Sending…' : 'Send test email'}</button></div>
+        </>
+      )}
     </form>
   )
 }

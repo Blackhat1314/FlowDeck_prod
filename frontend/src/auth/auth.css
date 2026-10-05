@@ -54,6 +54,14 @@ body { background: #000; font-family: var(--body); -webkit-font-smoothing: antia
 .linklike { background: none; border: 0; padding: 0; color: #fff; font-weight: 600; cursor: pointer; text-decoration: underline; text-decoration-color: rgba(255, 255, 255, 0.4); text-underline-offset: 3px; }
 .linklike:hover { text-decoration-color: #fff; }
 .signed-in { display: grid; gap: 12px; justify-items: start; }
+.signed-in h1 { margin-bottom: 4px; }
+.label-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.linklike.quiet { font-weight: 500; font-size: 13px; color: var(--fog); text-decoration-color: rgba(255, 255, 255, 0.25); }
+.linklike.quiet:hover { color: #fff; }
+.auth-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-top: 4px; }
+.btn-ghost { background: transparent; color: var(--paper); border: 1px solid rgba(255, 255, 255, 0.22); box-shadow: none; }
+.btn-ghost:hover:not([disabled]) { border-color: rgba(255, 255, 255, 0.5); }
+.btn-ghost[disabled] { opacity: 0.55; cursor: default; }
 .signed-in p { margin: 0; color: var(--fog); }
 
 @media (max-width: 900px) {

@@ -88,6 +88,14 @@ FLOWDECK_TRUST_PROXY=1
 FLOWDECK_PROXY_HOPS=1
 FLOWDECK_SECURE_COOKIE=1
 FLOW_VENUE=usdm
+# the site's address, used for links in emails (never taken from the request)
+FLOWDECK_SITE_URL=https://$domain
+# Email for password resets and new sign-in alerts (any SMTP provider; port 25 is blocked on Google Cloud), then restart:
+# SMTP_HOST=smtp.resend.com
+# SMTP_PORT=587
+# SMTP_USER=resend
+# SMTP_PASSWORD=re_xxxxxxxxxxxxxxxx
+# MAIL_FROM=Flowdeck <no-reply@$domain>
 # Razorpay keys for the Pay button (Dashboard > Account & Settings > API Keys), then restart:
 # RAZORPAY_KEY_ID=rzp_live_xxxxxxxxxxxxxx
 # RAZORPAY_KEY_SECRET=xxxxxxxxxxxxxxxxxxxxxxxx

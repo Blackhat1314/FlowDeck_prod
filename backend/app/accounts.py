@@ -24,6 +24,7 @@ DAY = 86_400_000
 MAX_TS = 4_102_444_800_000   # 1 Jan 2100
 EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,190}\.[^@\s]{2,24}$")
 SESSION_DAYS = 30
+RESET_MINUTES = 30   # how long a password-reset link works
 
 DEFAULT_SETTINGS = {
     "trial_days": "3",
@@ -110,6 +111,7 @@ class Accounts:
         self.db = sqlite3.connect(str(self.path), check_same_thread=False, isolation_level=None)
         self.db.row_factory = sqlite3.Row
         self.lock = threading.RLock()
+        self._new_device: dict[int, bool] = {}
         with self.lock:
             self.db.execute("PRAGMA journal_mode=WAL")
             self.db.execute("PRAGMA foreign_keys=ON")
@@ -167,8 +169,21 @@ class Accounts:
                   paid_at INTEGER
                 );
                 CREATE INDEX IF NOT EXISTS payments_user ON payments(user_id);
+                CREATE TABLE IF NOT EXISTS password_resets (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                  token_hash TEXT NOT NULL UNIQUE,
+                  created_at INTEGER NOT NULL,
+                  expires_at INTEGER NOT NULL,
+                  used_at INTEGER,
+                  ip TEXT
+                );
+                CREATE INDEX IF NOT EXISTS password_resets_user ON password_resets(user_id);
                 """
             )
+            scols = {r[1] for r in self.db.execute("PRAGMA table_info(sessions)")}
+            if "device" not in scols:   # SHA-256 of the browser's long-lived device cookie (new-device sign-in alerts)
+                self.db.execute("ALTER TABLE sessions ADD COLUMN device TEXT")
             cols = {r[1] for r in self.db.execute("PRAGMA table_info(users)")}
             if "plan" not in cols:
                 self.db.execute("ALTER TABLE users ADD COLUMN plan TEXT NOT NULL DEFAULT 'trial'")
@@ -412,7 +427,8 @@ class Accounts:
                 "google": bool(u["google_sub"]), "has_password": bool(u["pw_hash"])}
 
     # ---------------------------------------------------------------------------------------- sessions
-    def login(self, email: str, password: str, ip: str | None, ua: str | None):
+    def login(self, email: str, password: str, ip: str | None, ua: str | None, device: str | None = None,
+              check_device: bool = False):
         u = self.user_by_email(email)
         has_pw = bool(u and u["pw_hash"])
         ok = verify_password(password if isinstance(password, str) else "", u["pw_hash"] if has_pw else DUMMY_HASH) and has_pw
@@ -422,7 +438,7 @@ class Accounts:
         if u["status"] == "blocked":
             self.audit("login_blocked", u, u, "", ip)
             raise AccountError("blocked", "This account is blocked. Contact support.", 403)
-        return self.open_session(u, ip, ua)
+        return self.open_session(u, ip, ua, device=device, check_device=check_device)
 
     def google_account(self, sub: str, email: str):
         """The account a Google sign-in belongs to: the one already linked to that Google account, else the one
@@ -436,7 +452,7 @@ class Accounts:
         domain = email.rsplit("@", 1)[-1]
         return domain in ("gmail.com", "googlemail.com") or (isinstance(claims.get("hd"), str) and claims["hd"].lower() == domain)
 
-    def google_login(self, claims: dict, ip: str | None, ua: str | None, allow_create: bool):
+    def google_login(self, claims: dict, ip: str | None, ua: str | None, allow_create: bool, device: str | None = None):
         """Sign in with verified Google claims (see google_auth).
 
         - Already linked: sign in.
@@ -492,22 +508,44 @@ class Accounts:
         if u["status"] == "blocked":
             self.audit("login_blocked", u, u, "via Google", ip)
             raise AccountError("blocked", "This account is blocked. Contact support.", 403)
-        token, u, revoked, sid = self.open_session(u, ip, ua, via="Google")
+        token, u, revoked, sid = self.open_session(u, ip, ua, via="Google", device=device, check_device=True)
         return token, u, revoked, sid, created, cleared
 
-    def open_session(self, u, ip, ua, via: str = ""):
-        """Create a session and revoke every other session of the user. Returns (token, user, revoked session ids)."""
+    def known_device(self, uid: int, device: str | None, ua: str | None) -> bool:
+        """Has this account signed in from this browser before? `device` is the SHA-256 of the browser's device
+        cookie. Accounts that never signed in count as known (no alert on the first sign-in), and accounts whose
+        sessions all predate device cookies fall back to the browser string, so upgrading doesn't alert everyone."""
+        if device and self.one("SELECT 1 FROM sessions WHERE user_id=? AND device=? LIMIT 1", (uid, device)):
+            return True
+        if self.one("SELECT 1 FROM sessions WHERE user_id=? AND device IS NOT NULL LIMIT 1", (uid,)):
+            return False
+        if not self.one("SELECT 1 FROM sessions WHERE user_id=? LIMIT 1", (uid,)):
+            return True
+        return bool(self.one("SELECT 1 FROM sessions WHERE user_id=? AND ua=? LIMIT 1", (uid, (ua or "")[:300])))
+
+    def open_session(self, u, ip, ua, via: str = "", device: str | None = None, check_device: bool = False):
+        """Create a session and revoke every other session of the user. Returns (token, user, revoked session ids).
+        With check_device, last_new_device(session id) then tells whether this browser was new to the account."""
+        new_device = check_device and not self.known_device(u["id"], device, ua)
         t = now_ms()
         revoked = [r["id"] for r in self.q("SELECT id FROM sessions WHERE user_id=? AND revoked_at IS NULL", (u["id"],))]
         if revoked:
             self.run("UPDATE sessions SET revoked_at=?, revoke_reason='replaced' WHERE user_id=? AND revoked_at IS NULL", (t, u["id"]))
         token = secrets.token_urlsafe(32)
-        sid, _ = self.run("INSERT INTO sessions(user_id, token_hash, created_at, last_seen_at, expires_at, ip, ua) VALUES (?,?,?,?,?,?,?)",
-                          (u["id"], token_hash(token), t, t, t + SESSION_DAYS * DAY, ip, (ua or "")[:300]))
+        sid, _ = self.run("INSERT INTO sessions(user_id, token_hash, created_at, last_seen_at, expires_at, ip, ua, device)"
+                          " VALUES (?,?,?,?,?,?,?,?)",
+                          (u["id"], token_hash(token), t, t, t + SESSION_DAYS * DAY, ip, (ua or "")[:300], device))
         self.run("UPDATE users SET last_login_at=?, last_seen_at=?, last_ip=? WHERE id=?", (t, t, ip, u["id"]))
-        notes = ([f"via {via}"] if via else []) + ([f"replaced {len(revoked)} session(s)"] if revoked else [])
+        notes = ([f"via {via}"] if via else []) + ([f"replaced {len(revoked)} session(s)"] if revoked else []) \
+            + (["new device"] if new_device else [])
         self.audit("login", u, u, ", ".join(notes), ip)
+        if check_device:
+            self._new_device[sid] = new_device
         return token, self.user(u["id"]), revoked, sid
+
+    def last_new_device(self, sid: int) -> bool:
+        """Was the session opened (with check_device) from a browser this account hadn't used before? Asked once."""
+        return self._new_device.pop(sid, False)
 
     def session(self, token: str | None):
         """Returns (session row, user row, problem). problem is None when the session is valid."""
@@ -586,6 +624,51 @@ class Accounts:
 
     def set_tour_done(self, uid: int, done: bool = True):
         self.run("UPDATE users SET tour_done_at=? WHERE id=?", (now_ms() if done else None, uid))
+
+    # ---------------------------------------------------------------------------------------- password reset
+    def create_reset(self, u, ip: str | None, minutes: int = RESET_MINUTES) -> str:
+        """A single-use reset token for the user (only its SHA-256 is stored). Asking again cancels older links."""
+        t = now_ms()
+        token = secrets.token_urlsafe(32)
+        with self.lock:
+            self.db.execute("DELETE FROM password_resets WHERE user_id=? AND (used_at IS NOT NULL OR expires_at<=?)", (u["id"], t))
+            self.db.execute("UPDATE password_resets SET used_at=? WHERE user_id=? AND used_at IS NULL", (t, u["id"]))
+            self.db.execute("INSERT INTO password_resets(user_id, token_hash, created_at, expires_at, ip) VALUES (?,?,?,?,?)",
+                            (u["id"], token_hash(token), t, t + minutes * 60_000, ip))
+        self.audit("reset_requested", None, u, "", ip)
+        return token
+
+    def reset_target(self, token: str | None):
+        """The user a reset token is for, or an AccountError saying why the link can't be used."""
+        if not isinstance(token, str) or not 20 <= len(token) <= 100:
+            raise AccountError("bad_link", "This reset link isn't valid. Ask for a new one.", 400)
+        r = self.one("SELECT * FROM password_resets WHERE token_hash=?", (token_hash(token),))
+        if r is None or r["used_at"] is not None:
+            raise AccountError("bad_link", "This reset link has already been used or replaced by a newer one. Ask for a new one.", 400)
+        if r["expires_at"] <= now_ms():
+            raise AccountError("link_expired", "This reset link has expired. Ask for a new one.", 400)
+        u = self.user(r["user_id"])
+        if u is None:
+            raise AccountError("bad_link", "This reset link isn't valid. Ask for a new one.", 400)
+        if u["status"] == "blocked":
+            raise AccountError("blocked", "This account is blocked. Contact support.", 403)
+        return r, u
+
+    def use_reset(self, token: str, password: str, ip: str | None, ua: str | None, device: str | None = None):
+        """Set the new password, spend the token, sign out every session and sign this browser in.
+        Returns (session token, user, revoked session ids, session id)."""
+        check_password_rules(password)
+        pw = hash_password(password)
+        with self.lock:
+            r, u = self.reset_target(token)
+            _, n = self.run("UPDATE password_resets SET used_at=? WHERE id=? AND used_at IS NULL", (now_ms(), r["id"]))
+            if not n:   # two submits at once: only the first one counts
+                raise AccountError("bad_link", "This reset link has already been used. Ask for a new one.", 400)
+            self.run("UPDATE users SET pw_hash=? WHERE id=?", (pw, u["id"]))
+            revoked = self.revoke_user_sessions(u["id"], "password_reset")
+            self.audit("password_reset_email", u, u, f"signed out {len(revoked)} session(s)", ip)
+            token_s, u2, _, sid = self.open_session(u, ip, ua, via="password reset", device=device)
+        return token_s, u2, revoked, sid
 
     # ---------------------------------------------------------------------------------------- payments
     def create_payment(self, u, order_id: str, amount: int, currency: str, days: int, ip=None):

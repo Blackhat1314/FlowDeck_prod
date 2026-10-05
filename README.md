@@ -57,6 +57,7 @@ Flowdeck is a small website with these pages:
 |---|---|
 | `/` | Landing page: a full-screen hero over a looping video of liquidity walls (4K on large high-density screens), the dashboard, the 60-second film, a live demo of each tool, the accuracy results, price and FAQ |
 | `/login`, `/signup` | Everyone. A new sign-up gets a free trial (3 days by default) |
+| `/forgot`, `/reset` | Everyone. "Forgot password?" emails a reset link; the link opens `/reset` to choose a new password |
 | `/app` | The dashboard, for signed-in users. When the trial or plan ends, it shows a frozen snapshot instead of live data |
 | `/admin` | Admins only |
 | `/privacy`, `/terms` | Everyone. The privacy policy and terms, linked from Google's sign-in screen and the site footer. Contact details come from Settings |
@@ -91,6 +92,26 @@ Users (each user's Payments) and Activity. You can still extend anyone by hand u
   `/etc/flowdeck/flowdeck.env` on the server. Without them the Pay button is replaced by the support email.
 - Test keys (`rzp_test_...`) take no real money; the button says so. Swap in live keys (`rzp_live_...`) to charge.
 - Endpoints: `POST /api/create-order` and `POST /api/verify-payment` (signed-in users only, same-origin, rate-limited).
+
+**Emails (password reset and sign-in alerts).** With an SMTP provider set up, Flowdeck sends:
+- **Password reset links.** "Forgot password?" on the sign-in page emails a link that works once and expires in 30 minutes
+  (asking again cancels the older link). Saving the new password signs out every device and signs this browser in.
+  The page answers the same whether or not the address has an account, and each address gets at most 3 emails an hour.
+  Accounts made with Google can use it to set a password.
+- **"Your password was changed"** after a reset or a change from the account menu.
+- **New sign-in alerts** when an account signs in from a browser or device it hasn't used before (a long-lived device
+  cookie tells them apart), with the time, browser, IP address and a reset link.
+
+Links in emails always point at `FLOWDECK_SITE_URL`, never at the address the request came in on, and the reset token
+travels in the URL fragment (`/reset#t=…`), which browsers don't send to servers or in referrers. Only its SHA-256 is stored.
+Admin > Settings > Email shows whether email is on, how many went out today, the last failure, and has a
+**Send test email** button that reports exactly what the SMTP server answered. Without SMTP settings, "Forgot password?"
+tells users to email the support address, and you set a new password under Users.
+
+Setting it up with [Resend](https://resend.com) (free: 3,000 emails a month, 100 a day): add the domain, copy its DNS records
+into your DNS provider (plus a `_dmarc` TXT record `v=DMARC1; p=none;`), wait for *Verified*, create an API key with sending
+access, then put the settings below in `/etc/flowdeck/flowdeck.env` and restart. Google Cloud blocks port 25, so use 587
+(or 2587). Any other SMTP provider works the same way.
 
 **Account rules**
 - One device at a time: signing in signs out every other device, and opening the dashboard in a second tab stops the first.
@@ -139,6 +160,10 @@ To ship new code: push to `main`, then on the server `sudo bash /opt/flowdeck/sr
 | `FLOWDECK_ADMIN_EMAIL`, `FLOWDECK_ADMIN_PASSWORD` | Create this admin on start if no account uses the email |
 | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` | Razorpay API keys for the Pay button. Also read from `backend/.env` |
 | `FLOWDECK_GOOGLE_CLIENT_ID=...` | Google OAuth client ID for "Sign in with Google" (Flowdeck's own is built in). Empty value turns the button off |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` | SMTP server for account emails (Resend: `smtp.resend.com`, `587`, `resend`, your API key). Port 465 uses TLS, others STARTTLS |
+| `MAIL_FROM` | Sender, for example `Flowdeck <no-reply@flowdeck.site>`. The domain must be verified with the provider |
+| `FLOWDECK_SITE_URL` | The site's address for links in emails, for example `https://flowdeck.site` (`update.sh` adds it from the domain) |
+| `FLOWDECK_MAIL_DAILY_LIMIT=90` | Stop sending after this many emails a day (sign-in alerts stop at 80 % of it, so reset links always get through) |
 | `FLOWDECK_ARCHIVE_DAYS=0` | Days of 1-minute heatmap and footprint history to keep on disk. `0` (default) keeps it forever |
 | `FLOWDECK_FILL_DAYS=7` | Days of footprint to back-fill from Binance's free daily trade files. `0` turns the back-fill off |
 
@@ -271,6 +296,7 @@ backend/app/accounts.py                 users, sessions, trial rules, audit log,
 backend/app/engine/heattiers.py         merges live heatmap columns into 5-second and 1-minute history
 backend/app/archive.py                  history files on disk (heatmap tiers, footprint bars), one file per UTC day
 backend/app/histfill.py                 footprint back-fill from data.binance.vision (runs as its own process)
+backend/app/mailer.py                   account emails over SMTP: reset links, password changed, new sign-in alerts
 backend/data/                           accounts database + first admin login (created on start; not in git)
 backend/app/sim.py, xsim.py             synthetic market and other venues (demo mode + tests)
 backend/tests/                          unit tests + mock exchange for offline integration tests

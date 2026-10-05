@@ -13,6 +13,7 @@ import csv
 import io
 import logging
 import os
+import secrets
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -30,9 +31,11 @@ from .envfile import load_env_file
 # variables win. Loaded before anything below reads the environment.
 load_env_file(Path(__file__).resolve().parent.parent / ".env", Path(__file__).resolve().parent.parent.parent / ".env")
 
-from .accounts import DAY, AccountError, Accounts, RateLimiter  # noqa: E402
+from .accounts import DAY, RESET_MINUTES, AccountError, Accounts, RateLimiter, clean_email  # noqa: E402
 from .accounts import now_ms as now_ms_int  # noqa: E402
+from .accounts import token_hash  # noqa: E402
 from .google_auth import GoogleTokenError, GoogleVerifier, valid_client_id  # noqa: E402
+from .mailer import MailError, Mailer, changed_email, mask_email, reset_email, signin_email, test_email  # noqa: E402
 from .payments import PLAN_DAYS, Razorpay, RazorpayError  # noqa: E402
 from .engine import VENUES
 from .engine.xchg import XVENUES
@@ -43,6 +46,7 @@ BACKEND = Path(__file__).resolve().parent.parent
 STATIC = BACKEND / "static"
 DB_PATH = Path(os.environ.get("FLOWDECK_DB", str(BACKEND / "data" / "flowdeck.db")))
 COOKIE = "fd_session"
+DEVICE_COOKIE = "fd_device"   # random id per browser, kept ~400 days: tells a new device from one seen before
 TRUST_PROXY = os.environ.get("FLOWDECK_TRUST_PROXY") == "1"
 FORCE_SECURE = os.environ.get("FLOWDECK_SECURE_COOKIE") == "1"
 # how many proxies sit in front of the app (nginx = 1, Cloudflare + nginx = 2); used to pick the real client IP
@@ -58,9 +62,12 @@ google = GoogleVerifier(GOOGLE_CLIENT_ID) if GOOGLE_CLIENT_ID else None
 # Razorpay Standard Checkout: RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET (environment or .env). Without them the
 # Pay button is hidden and users are pointed to the contact email.
 razorpay = Razorpay.from_env()
+# Account emails (password reset, new sign-in alerts): SMTP_* settings, see mailer.py. Without them the
+# "Forgot password?" link points users to the contact email instead.
+mailer = Mailer.from_env()
 
 # websocket close codes understood by the dashboard
-WS_CODES = {"no_session": 4401, "session_expired": 4401, "logout": 4401, "replaced": 4409, "blocked": 4403,
+WS_CODES = {"no_session": 4401, "session_expired": 4401, "logout": 4401, "replaced": 4409, "blocked": 4403, "password_reset": 4412,
             "deleted": 4404, "admin_logout": 4410, "revoked": 4401, "reconnect": 4100, "other_tab": 4411}
 
 runtime: Runtime | None = None
@@ -76,6 +83,9 @@ google_ip = RateLimiter(30, 15 * 60_000)     # Google sign-in attempts per IP
 pay_orders = RateLimiter(20, 60 * 60_000)    # checkout orders per account
 pay_verify = RateLimiter(30, 60 * 60_000)    # payment confirmations per account
 hist_reqs = RateLimiter(240, 10 * 60_000)    # history requests per account (scrolling back loads chunks)
+forgot_ip = RateLimiter(10, 60 * 60_000)     # password-reset requests per IP
+forgot_email = RateLimiter(3, 60 * 60_000)   # reset emails per address (more are silently skipped)
+reset_ip = RateLimiter(30, 15 * 60_000)      # reset-link checks and submissions per IP
 
 
 # ============================================================================================ presence
@@ -189,7 +199,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Flowdeck", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
 
-NOINDEX = ("/app", "/admin", "/api/", "/login", "/signup")   # kept out of search results (see also robots.txt)
+NOINDEX = ("/app", "/admin", "/api/", "/login", "/signup", "/forgot", "/reset")   # kept out of search results (see also robots.txt)
 
 
 @app.middleware("http")
@@ -203,6 +213,8 @@ async def headers(request: Request, call_next):
         resp.headers.setdefault("X-Robots-Tag", "noindex")
     if path.startswith("/api/"):
         resp.headers.setdefault("Cache-Control", "no-store")
+    if path == "/reset":   # the reset token rides in the URL fragment; send no referrer from this page at all
+        resp.headers["Referrer-Policy"] = "no-referrer"
     elif path.startswith("/assets/") and resp.status_code in (200, 206):
         resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"   # file names carry a content hash
     return resp
@@ -298,7 +310,8 @@ def current(request: Request, need_admin=False):
     s, u, problem = accounts.session(request.cookies.get(COOKIE))
     if problem:
         err(problem, {"replaced": "You signed in on another device.", "blocked": "This account is blocked.",
-                      "admin_logout": "You were signed out by an admin.", "deleted": "This account no longer exists."}
+                      "admin_logout": "You were signed out by an admin.", "deleted": "This account no longer exists.",
+                      "password_reset": "Your password was changed, so this device was signed out."}
             .get(problem, "Please sign in."), 401)
     if need_admin and u["role"] != "admin":
         err("forbidden", "Admins only.", 403)
@@ -307,6 +320,33 @@ def current(request: Request, need_admin=False):
 
 def set_cookie(resp: Response, request: Request, token: str):
     resp.set_cookie(COOKIE, token, max_age=30 * 86400, httponly=True, samesite="lax", secure=is_https(request), path="/")
+
+
+def device_of(request: Request) -> tuple[str, str]:
+    """(device cookie value, its SHA-256). A browser without one gets a fresh id (set by remember_device)."""
+    raw = request.cookies.get(DEVICE_COOKIE) or ""
+    if not (20 <= len(raw) <= 64) or not raw.replace("-", "").replace("_", "").isalnum():
+        raw = secrets.token_urlsafe(24)
+    return raw, token_hash(raw)
+
+
+def remember_device(resp: Response, request: Request, raw: str):
+    resp.set_cookie(DEVICE_COOKIE, raw, max_age=400 * 86400, httponly=True, samesite="lax", secure=is_https(request), path="/")
+
+
+def reply_to() -> str:
+    return accounts.settings().get("contact_email") or ""
+
+
+def alert_new_device(u, via: str, ip: str, ua: str | None):
+    subject, text, html_ = signin_email(mailer, u["name"], via, ip, ua or "", now_ms_int(), mailer.link("/forgot"))
+    if mailer.send_later("alert", u["email"], subject, text, html_, reply_to()):
+        accounts.audit("signin_alert", None, u, f"new device: {via}", ip)
+
+
+def password_changed_mail(u, how: str, ip: str, ua: str | None):
+    subject, text, html_ = changed_email(mailer, u["name"], how, ip, ua or "", now_ms_int(), mailer.link("/forgot"))
+    mailer.send_later("changed", u["email"], subject, text, html_, reply_to())
 
 
 def me_json(u) -> dict:
@@ -319,7 +359,7 @@ def me_json(u) -> dict:
 
 
 def public_cfg() -> dict:
-    return {**accounts.public_config(), "google_client_id": GOOGLE_CLIENT_ID or None,
+    return {**accounts.public_config(), "google_client_id": GOOGLE_CLIENT_ID or None, "email_enabled": mailer.enabled,
             "payments_enabled": razorpay.enabled, "payments_test": razorpay.enabled and razorpay.test_mode,
             "plan_days": PLAN_DAYS}
 
@@ -369,6 +409,8 @@ for _name, _type in ROOT_FILES.items():
 
 @app.get("/login", include_in_schema=False)
 @app.get("/signup", include_in_schema=False)
+@app.get("/forgot", include_in_schema=False)
+@app.get("/reset", include_in_schema=False)
 async def auth_page(request: Request):
     return page("auth.html")
 
@@ -423,9 +465,11 @@ async def signup(request: Request):
     if not signup_ip.hit(ip):
         err("rate_limited", "Too many sign-ups from your network. Try again later.", 429)
     u = await asyncio.to_thread(accounts.create_user, d.get("email"), d.get("name"), d.get("password"), ip=ip)
-    token, u, _, sid = accounts.open_session(u, ip, request.headers.get("user-agent"))
+    dev_raw, dev = device_of(request)
+    token, u, _, sid = accounts.open_session(u, ip, request.headers.get("user-agent"), device=dev)
     resp = JSONResponse({"ok": True, **me_json(u)})
     set_cookie(resp, request, token)
+    remember_device(resp, request, dev_raw)
     return resp
 
 
@@ -438,9 +482,11 @@ async def login(request: Request):
     pair = f"{email}|{ip}"
     if login_ip.full(ip) or login_pair.full(pair) or login_email.full(email):
         err("rate_limited", "Too many failed attempts. Wait 15 minutes and try again.", 429)
+    ua = request.headers.get("user-agent")
+    dev_raw, dev = device_of(request)
     try:
-        token, u, revoked, sid = await asyncio.to_thread(accounts.login, email, d.get("password") or "", ip,
-                                                         request.headers.get("user-agent"))
+        token, u, revoked, sid = await asyncio.to_thread(accounts.login, email, d.get("password") or "", ip, ua, dev,
+                                                         check_device=True)
     except AccountError as e:
         if e.code == "bad_login":
             login_ip.hit(ip)
@@ -449,8 +495,11 @@ async def login(request: Request):
         raise
     login_pair.reset(pair)
     kick_others(u["id"], sid, "replaced")
+    if accounts.last_new_device(sid):
+        alert_new_device(u, "email and password", ip, ua)
     resp = JSONResponse({"ok": True, "replaced": len(revoked), **me_json(u)})
     set_cookie(resp, request, token)
+    remember_device(resp, request, dev_raw)
     return resp
 
 
@@ -476,11 +525,75 @@ async def google_signin(request: Request):
         if not signup_ip.hit(ip):
             err("rate_limited", "Too many sign-ups from your network. Try again later.", 429)
         allow_create = True
+    ua = request.headers.get("user-agent")
+    dev_raw, dev = device_of(request)
     token, u, revoked, sid, created, cleared = await asyncio.to_thread(
-        accounts.google_login, claims, ip, request.headers.get("user-agent"), allow_create)
+        accounts.google_login, claims, ip, ua, allow_create, dev)
     kick_others(u["id"], sid, "replaced")
+    if not created and accounts.last_new_device(sid):
+        alert_new_device(u, "Google", ip, ua)
     resp = JSONResponse({"ok": True, "created": created, "password_cleared": cleared, "replaced": len(revoked), **me_json(u)})
     set_cookie(resp, request, token)
+    remember_device(resp, request, dev_raw)
+    return resp
+
+
+# ============================================================================================ password reset by email
+@app.post("/api/auth/forgot")
+async def forgot_password(request: Request):
+    """Email a reset link. The answer is the same whether or not the address has an account."""
+    d = await body(request)
+    ip = client_ip(request)
+    if not mailer.enabled:
+        contact = accounts.settings().get("contact_email")
+        err("email_off", "Password reset by email isn't set up yet. " +
+            (f"Email {contact} and we'll reset it for you." if contact else "Contact support and we'll reset it for you."), 503)
+    if not forgot_ip.hit(ip):
+        err("rate_limited", "Too many requests from your network. Try again in an hour.", 429)
+    raw = d.get("email")
+    try:
+        email = clean_email(raw)
+    except AccountError:
+        err("bad_email", "Enter a valid email address.")
+    u = accounts.user_by_email(email)
+    if u is not None and u["status"] == "active" and forgot_email.hit(email):
+        token = await asyncio.to_thread(accounts.create_reset, u, ip)
+        ua = request.headers.get("user-agent") or ""
+        subject, text, html_ = reset_email(mailer, u["name"], mailer.link(f"/reset#t={token}"), RESET_MINUTES, ip, ua,
+                                           now_ms_int(), bool(u["pw_hash"]))
+        mailer.send_later("reset", u["email"], subject, text, html_, reply_to())
+    return {"ok": True, "minutes": RESET_MINUTES}
+
+
+@app.post("/api/auth/reset/check")
+async def reset_check(request: Request):
+    """Is this reset link still good? Answers with the masked address so the user knows which account it's for."""
+    d = await body(request)
+    if not reset_ip.hit(client_ip(request)):
+        err("rate_limited", "Too many attempts. Wait 15 minutes and try again.", 429)
+    r, u = accounts.reset_target(d.get("token"))
+    return {"ok": True, "email": mask_email(u["email"]), "has_password": bool(u["pw_hash"]),
+            "expires_at": r["expires_at"]}
+
+
+@app.post("/api/auth/reset")
+async def reset_password(request: Request):
+    """Set a new password from a reset link: every device is signed out and this browser is signed in."""
+    d = await body(request)
+    ip = client_ip(request)
+    if not reset_ip.hit(ip):
+        err("rate_limited", "Too many attempts. Wait 15 minutes and try again.", 429)
+    ua = request.headers.get("user-agent")
+    dev_raw, dev = device_of(request)
+    token, u, revoked, sid = await asyncio.to_thread(accounts.use_reset, d.get("token"), d.get("password") or "", ip, ua, dev)
+    kick_others(u["id"], sid, "password_reset")
+    for key in [k for k in login_pair.hits if k.startswith(u["email"] + "|")]:
+        login_pair.reset(key)
+    login_email.reset(u["email"])
+    password_changed_mail(u, "reset with an email link", ip, ua)
+    resp = JSONResponse({"ok": True, **me_json(u)})
+    set_cookie(resp, request, token)
+    remember_device(resp, request, dev_raw)
     return resp
 
 
@@ -632,7 +745,15 @@ async def change_password(request: Request):
     if u["pw_hash"] and not await asyncio.to_thread(verify_password, cur if isinstance(cur, str) else "", u["pw_hash"]):
         pw_change.hit(key)
         err("bad_password", "Your current password is wrong.", 400)
-    await asyncio.to_thread(accounts.set_password, u["id"], d.get("new") or "", actor=u, ip=client_ip(request))
+    ip = client_ip(request)
+    had = bool(u["pw_hash"])
+    await asyncio.to_thread(accounts.set_password, u["id"], d.get("new") or "", actor=u, ip=ip)
+    others = [r["id"] for r in accounts.q("SELECT id FROM sessions WHERE user_id=? AND revoked_at IS NULL AND id<>?", (u["id"], s["id"]))]
+    for sid in others:
+        accounts.revoke_session(sid, "password_reset")
+    kick_others(u["id"], s["id"], "password_reset")
+    password_changed_mail(u, "changed from the account menu" if had else "set from the account menu", ip,
+                          request.headers.get("user-agent"))
     return {"ok": True}
 
 
@@ -812,6 +933,35 @@ async def admin_save_settings(request: Request):
     a = admin(request)
     d = await body(request)
     return accounts.set_settings(d, actor=a, ip=client_ip(request))
+
+
+@app.get("/api/admin/mail")
+async def admin_mail(request: Request):
+    admin(request)
+    st = mailer.status()
+    st["password"] = bool(mailer.password)   # only whether one is set
+    return st
+
+
+@app.post("/api/admin/mail/test")
+async def admin_mail_test(request: Request):
+    """Send a test email now and report exactly what the SMTP server said."""
+    a = admin(request)
+    d = await body(request)
+    to = d.get("to") or a["email"]
+    try:
+        to = clean_email(to)
+    except AccountError:
+        err("bad_email", "Enter a valid email address.")
+    subject, text, html_ = test_email(mailer, now_ms_int())
+    try:
+        await asyncio.to_thread(mailer.send, mailer.build(to, subject, text, html_, reply_to()))
+    except MailError as e:
+        mailer.last_error = str(e)
+        accounts.audit("mail_test", a, None, f"to {to}: failed: {e}"[:300], client_ip(request))
+        err("mail_failed", str(e), 502)
+    accounts.audit("mail_test", a, None, f"to {to}: sent", client_ip(request))
+    return {"ok": True, "to": to}
 
 
 @app.get("/api/admin/users.csv")

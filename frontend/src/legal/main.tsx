@@ -4,7 +4,7 @@ import './page.css'
 import { api, mailLink, type PublicConfig } from '../lib/session'
 
 // /privacy and /terms. The contact line and trial/price come from the site settings in the admin panel.
-const UPDATED = '5 October 2026'
+const UPDATED = '6 October 2026'
 type Doc = 'privacy' | 'terms'
 
 function Contact({ cfg }: { cfg: PublicConfig | null }) {
@@ -30,17 +30,18 @@ function Privacy({ cfg }: { cfg: PublicConfig | null }) {
       </ul>
 
       <h2>Cookies</h2>
-      <p>We use one cookie, <b>fd_session</b>, to keep you signed in for up to 30 days. There are no advertising or analytics cookies. The &ldquo;Sign in with Google&rdquo; button on the sign-in page is loaded from Google, and Google's <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">privacy policy</a> covers what it does.</p>
+      <p>We use two cookies. <b>fd_session</b> keeps you signed in for up to 30 days. <b>fd_device</b> is a random ID for your browser, kept for about a year, so we can email you when your account signs in from a device it hasn't used before. There are no advertising or analytics cookies. The &ldquo;Sign in with Google&rdquo; button on the sign-in page is loaded from Google, and Google's <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">privacy policy</a> covers what it does.</p>
 
       <h2>How we use it</h2>
       <ul>
         <li>To create and run your account, including your free trial and paid access.</li>
         <li>To keep each account to one device at a time and to protect accounts from misuse.</li>
         <li>To contact you about your account or a payment.</li>
+        <li>To email you account messages: password reset links, a note when your password changes, and an alert when your account signs in from a new device. We don't send newsletters or marketing.</li>
       </ul>
 
       <h2>Who else sees it</h2>
-      <p>No one we sell or rent it to. Your data is stored on servers we rent from Google Cloud in Mumbai, India. When you pay, Razorpay processes the payment and sees your name, email and payment details. We'll share data with authorities only when the law requires it.</p>
+      <p>No one we sell or rent it to. Your data is stored on servers we rent from Google Cloud in Mumbai, India. When you pay, Razorpay processes the payment and sees your name, email and payment details. Account emails are delivered by our email provider, which sees your email address and the message. We'll share data with authorities only when the law requires it.</p>
 
       <h2>How long we keep it</h2>
       <p>We keep your account details while your account exists. When you ask us to delete your account, we remove your profile and sign-in sessions. Entries in the security log that mention your email may be kept to protect the service.</p>

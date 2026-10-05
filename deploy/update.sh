@@ -17,6 +17,11 @@ main() {
   # pick up changes to the service or Caddy config too
   install -m 644 "$src/deploy/flowdeck.service" /etc/systemd/system/flowdeck.service
   systemctl daemon-reload
+  # settings newer versions need: the site address for links in emails
+  if [ -f /etc/flowdeck/domain ] && ! grep -q '^FLOWDECK_SITE_URL=' /etc/flowdeck/flowdeck.env; then
+    echo "FLOWDECK_SITE_URL=https://$(cat /etc/flowdeck/domain)" >> /etc/flowdeck/flowdeck.env
+    echo "Added FLOWDECK_SITE_URL=https://$(cat /etc/flowdeck/domain) to /etc/flowdeck/flowdeck.env"
+  fi
   if [ -f /etc/flowdeck/domain ]; then
     sed "s/__DOMAIN__/$(cat /etc/flowdeck/domain)/g" "$src/deploy/Caddyfile" > /etc/caddy/Caddyfile
     systemctl reload caddy

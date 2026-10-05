@@ -19,7 +19,28 @@ function ArtLoop() {
 }
 import { api, ApiError, type Me, type PublicConfig, REASONS } from '../lib/session'
 
-type Mode = 'signin' | 'signup'
+type Mode = 'signin' | 'signup' | 'forgot' | 'reset'
+const PATHS: Record<Mode, string> = { signin: '/login', signup: '/signup', forgot: '/forgot', reset: '/reset' }
+
+function modeFromPath(): Mode {
+  const p = location.pathname
+  return p.startsWith('/signup') ? 'signup' : p.startsWith('/forgot') ? 'forgot' : p.startsWith('/reset') ? 'reset' : 'signin'
+}
+
+// The reset link carries its token in the URL fragment (#t=...), which browsers never send to any server. Take it
+// out of the address bar straight away; keep it for this tab only so a reload still works.
+function takeResetToken(): string {
+  if (location.pathname !== '/reset') return ''
+  const t = new URLSearchParams(location.hash.slice(1)).get('t') || ''
+  if (location.hash) history.replaceState(null, '', '/reset')
+  try {
+    if (t) sessionStorage.setItem('fd-reset', t)
+    return t || sessionStorage.getItem('fd-reset') || ''
+  } catch {
+    return t
+  }
+}
+const resetToken = takeResetToken()
 
 // ------------------------------------------------------------------ Sign in with Google (Google Identity Services)
 declare global {
@@ -43,7 +64,7 @@ function loadGis(): Promise<void> {
 }
 
 /** Google's own button (an iframe Google draws), sized to the form. The token it returns goes to onCredential. */
-function GoogleButton({ clientId, mode, onCredential }: { clientId: string; mode: Mode; onCredential: (c: string) => void }) {
+function GoogleButton({ clientId, mode, onCredential }: { clientId: string; mode: 'signin' | 'signup'; onCredential: (c: string) => void }) {
   const box = useRef<HTMLDivElement>(null)
   const [failed, setFailed] = useState(false)
   onGoogleCredential = onCredential
@@ -94,8 +115,158 @@ export function Brandmark() {
   )
 }
 
+const offline = 'Could not reach the server. Check your connection and try again.'
+
+/** "Forgot password?": ask for the account's email and send a reset link. */
+function Forgot({ cfg, initialEmail, onBack }: { cfg: PublicConfig | null; initialEmail: string; onBack: () => void }) {
+  const [email, setEmail] = useState(initialEmail)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [sentTo, setSentTo] = useState<string | null>(null)
+  const [minutes, setMinutes] = useState(30)
+  const [again, setAgain] = useState(0) // seconds before "Send it again" works
+
+  useEffect(() => {
+    if (again <= 0) return
+    const id = setTimeout(() => setAgain(again - 1), 1000)
+    return () => clearTimeout(id)
+  }, [again])
+
+  const send = async (e?: React.FormEvent) => {
+    e?.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      const r = await api<{ minutes: number }>('/api/auth/forgot', { body: { email } })
+      setMinutes(r.minutes)
+      setSentTo(email.trim())
+      setAgain(60)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : offline)
+    }
+    setBusy(false)
+  }
+
+  if (cfg && cfg.email_enabled === false) {
+    return (
+      <div className="signed-in">
+        <h1>Reset your password</h1>
+        <p>Password reset by email isn't set up yet.{' '}
+          {cfg.contact_email ? <>Email <a className="linklike" href={`mailto:${cfg.contact_email}`}>{cfg.contact_email}</a> from the address you signed up with and we'll reset it for you.</> : 'Contact support and we\'ll reset it for you.'}
+        </p>
+        <button className="linklike" onClick={onBack}>Back to sign in</button>
+      </div>
+    )
+  }
+  if (sentTo) {
+    return (
+      <div className="signed-in">
+        <h1>Check your inbox</h1>
+        <p>If <b>{sentTo}</b> has a Flowdeck account, a reset link is on its way. It works once and expires in {minutes} minutes.</p>
+        <p className="auth-fine">Nothing after a few minutes? Check your spam folder, or make sure you typed the address you signed up with.</p>
+        {error && <p className="auth-error" role="alert">{error}</p>}
+        <div className="auth-actions">
+          <button className="btn btn-ghost" disabled={busy || again > 0} onClick={() => send()}>
+            {busy ? 'Sending…' : again > 0 ? `Send it again (${again}s)` : 'Send it again'}
+          </button>
+          <button className="linklike" onClick={() => { setSentTo(null); setError(null) }}>Use another email</button>
+        </div>
+        <button className="linklike" onClick={onBack}>Back to sign in</button>
+      </div>
+    )
+  }
+  return (
+    <>
+      <h1>Reset your password</h1>
+      <p className="auth-sub">Enter the email you use for Flowdeck and we'll send you a link to choose a new password.</p>
+      <form onSubmit={send}>
+        <label>Email
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required inputMode="email" autoFocus />
+        </label>
+        {error && <p className="auth-error" role="alert">{error}</p>}
+        <button className="btn btn-signal wide" disabled={busy}>{busy ? 'Sending…' : 'Email me a reset link'}</button>
+      </form>
+      <p className="auth-fine">Signed up with Google? This sets a password for your account too.</p>
+      <p className="auth-switch"><button className="linklike" onClick={onBack}>Back to sign in</button></p>
+    </>
+  )
+}
+
+/** The page a reset link opens: check the link, then choose the new password (which signs this browser in). */
+function Reset({ onForgot }: { onForgot: () => void }) {
+  const [state, setState] = useState<'checking' | 'ok' | 'bad'>(resetToken ? 'checking' : 'bad')
+  const [who, setWho] = useState<{ email: string; has_password: boolean } | null>(null)
+  const [problem, setProblem] = useState('This reset link isn\'t complete. Open it again from the email, or ask for a new one.')
+  const [pw, setPw] = useState('')
+  const [pw2, setPw2] = useState('')
+  const [show, setShow] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!resetToken) return
+    api<{ email: string; has_password: boolean }>('/api/auth/reset/check', { body: { token: resetToken } })
+      .then((r) => { setWho(r); setState('ok') })
+      .catch((err) => { setProblem(err instanceof ApiError ? err.message : offline); setState('bad') })
+  }, [])
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (pw !== pw2) {
+      setError('The two passwords don\'t match.')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      await api('/api/auth/reset', { body: { token: resetToken, password: pw } })
+      try { sessionStorage.removeItem('fd-reset') } catch { /* ignore */ }
+      location.href = '/app'
+    } catch (err) {
+      if (err instanceof ApiError && ['bad_link', 'link_expired', 'blocked'].includes(err.code)) {
+        setProblem(err.message)
+        setState('bad')
+      } else setError(err instanceof ApiError ? err.message : offline)
+      setBusy(false)
+    }
+  }
+
+  if (state === 'checking') return <p className="auth-sub" role="status">Checking your link…</p>
+  if (state === 'bad') {
+    return (
+      <div className="signed-in">
+        <h1>This link can't be used</h1>
+        <p>{problem}</p>
+        <button className="btn btn-signal" onClick={onForgot}>Send me a new link</button>
+      </div>
+    )
+  }
+  return (
+    <>
+      <h1>{who?.has_password ? 'Choose a new password' : 'Set your password'}</h1>
+      <p className="auth-sub">For <b>{who?.email}</b>. Saving it signs you in here and signs out every other device.</p>
+      <form onSubmit={save}>
+        <label>New password
+          <span className="pw">
+            <input type={show ? 'text' : 'password'} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password"
+              required minLength={8} maxLength={200} autoFocus />
+            <button type="button" onClick={() => setShow(!show)} aria-pressed={show}>{show ? 'Hide' : 'Show'}</button>
+          </span>
+          <small>At least 8 characters.</small>
+        </label>
+        <label>Type it again
+          <input type={show ? 'text' : 'password'} value={pw2} onChange={(e) => setPw2(e.target.value)} autoComplete="new-password"
+            required minLength={8} maxLength={200} />
+        </label>
+        {error && <p className="auth-error" role="alert">{error}</p>}
+        <button className="btn btn-signal wide" disabled={busy}>{busy ? 'Saving…' : 'Save password and sign in'}</button>
+      </form>
+    </>
+  )
+}
+
 function Auth() {
-  const [mode, setMode] = useState<Mode>(location.pathname.startsWith('/signup') ? 'signup' : 'signin')
+  const [mode, setMode] = useState<Mode>(modeFromPath)
   const [cfg, setCfg] = useState<PublicConfig | null>(null)
   const [me, setMe] = useState<Me | null>(null)
   const [name, setName] = useState('')
@@ -111,13 +282,14 @@ function Auth() {
     api<Me>('/api/auth/me').then(setMe).catch(() => {})
   }, [])
   useEffect(() => {
-    document.title = mode === 'signup' ? 'Create your Flowdeck account' : 'Sign in to Flowdeck'
+    document.title = { signup: 'Create your Flowdeck account', signin: 'Sign in to Flowdeck', forgot: 'Reset your Flowdeck password',
+      reset: 'Choose a new Flowdeck password' }[mode]
   }, [mode])
 
   const switchMode = (m: Mode) => {
     setMode(m)
     setError(null)
-    history.replaceState(null, '', (m === 'signup' ? '/signup' : '/login') + location.search)
+    history.replaceState(null, '', PATHS[m] + (m === 'signin' || m === 'signup' ? location.search : ''))
   }
 
   const googleId = cfg?.google_client_id || null
@@ -188,6 +360,10 @@ function Auth() {
               <p>To sign in with a password as well, choose <b>Set a password</b> in the dashboard's account menu.</p>
               <a className="btn btn-signal" href={safeNext()}>Open the dashboard</a>
             </div>
+          ) : mode === 'forgot' ? (
+            <Forgot cfg={cfg} initialEmail={email} onBack={() => switchMode('signin')} />
+          ) : mode === 'reset' ? (
+            <Reset onForgot={() => switchMode('forgot')} />
           ) : me ? (
             <div className="signed-in">
               <h1>You're signed in</h1>
@@ -229,7 +405,11 @@ function Auth() {
                   <label>Email
                     <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required inputMode="email" />
                   </label>
-                  <label>Password
+                  <label>
+                    <span className="label-row">
+                      Password
+                      {mode === 'signin' && <button type="button" className="linklike quiet" onClick={() => switchMode('forgot')}>Forgot password?</button>}
+                    </span>
                     <span className="pw">
                       <input type={show ? 'text' : 'password'} value={pw} onChange={(e) => setPw(e.target.value)}
                         autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} required minLength={mode === 'signup' ? 8 : 1} />

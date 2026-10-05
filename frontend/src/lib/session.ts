@@ -14,6 +14,8 @@ export interface PublicConfig {
   payments_test?: boolean
   /** days of access one payment buys */
   plan_days?: number
+  /** the server can send email (password reset links, sign-in alerts) */
+  email_enabled?: boolean
 }
 
 export interface MeUser {
@@ -79,10 +81,12 @@ export const REASONS: Record<string, string> = {
   revoked: 'Your session ended. Please sign in again.',
   no_session: 'Please sign in to continue.',
   other_tab: 'Flowdeck is open in another tab or window with this account. Only one can stream at a time.',
+  password_reset: 'Your password was changed, so this device was signed out. Sign in with the new password.',
 }
 
 export const CLOSE_REASONS: Record<number, string> = {
   4401: 'session_expired', 4403: 'blocked', 4404: 'deleted', 4409: 'replaced', 4410: 'admin_logout', 4411: 'other_tab',
+  4412: 'password_reset',
 }
 
 export function loginUrl(next = location.pathname, reason?: string) {
