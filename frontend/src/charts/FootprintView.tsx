@@ -205,6 +205,12 @@ class FootController {
     const lay = this.layout()
     this.lay = lay
     const bars = lay.bars
+    // candles without per-price detail on screen: ask the server's archive for their footprint
+    {
+      const n0 = bars.length
+      const vis = bars.filter((b, i) => b.ax && this.xOf(i, n0) + this.barW >= 0 && this.xOf(i, n0) <= this.chartW)
+      if (vis.length) store.loadBarsFor(vis[0].t, vis[vis.length - 1].t + lay.tf)
+    }
     if (!bars.length) {
       g.fillStyle = C.dim
       g.font = '500 13px "IBM Plex Sans", system-ui'

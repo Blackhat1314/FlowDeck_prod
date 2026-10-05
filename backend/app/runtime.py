@@ -7,8 +7,11 @@ import asyncio
 import dataclasses
 import logging
 import os
+import shutil
 import ssl
+import sys
 import time
+from pathlib import Path
 
 import aiohttp
 import orjson
@@ -150,9 +153,14 @@ class Hub:
 
 # ============================================================================ runtime
 class Runtime:
-    def __init__(self, venue: str = "usdm", demo: bool = False, settings: Settings | None = None):
+    def __init__(self, venue: str = "usdm", demo: bool = False, settings: Settings | None = None,
+                 archive_root=None, archive_days: int = 0, fill_days: int = 7):
         self.venue_key = venue
         self.demo = demo
+        self.archive_root = archive_root      # history on disk (None = keep nothing between restarts)
+        self.archive_days = archive_days
+        self.fill_days = fill_days            # days of footprint to back-fill from Binance's daily files
+        self.archive = None
         self.settings = settings or Settings()
         self.hub = Hub()
         self.engine = Engine(venue_with_overrides(VENUES[venue]), self.settings)
@@ -170,6 +178,7 @@ class Runtime:
             json_serialize=lambda o: orjson.dumps(o).decode(),
         )
         self.ready = asyncio.Event()
+        self._open_archive()
         if self.demo:
             self.tasks = [asyncio.create_task(self._demo())]
         else:
@@ -191,6 +200,10 @@ class Runtime:
                 self.tasks.append(asyncio.create_task(self._xws_loop(vkey, url, subs, ping)))
             self.ready.set()
         self.tasks.append(asyncio.create_task(self._clock()))
+        if self.archive is not None:
+            self.tasks.append(asyncio.create_task(self._archive_loop()))
+            if not self.demo and self.fill_days > 0:
+                self.tasks.append(asyncio.create_task(self._daily_fill_loop()))
         log.info("runtime started: %s%s", self.engine.v.label, " (demo)" if self.demo else "")
 
     async def stop(self):
@@ -198,6 +211,11 @@ class Runtime:
             t.cancel()
         await asyncio.gather(*self.tasks, return_exceptions=True)
         self.tasks = []
+        if self.archive is not None:
+            try:
+                await asyncio.to_thread(self._save_history, now_ms())
+            except Exception:
+                log.exception("saving history on stop failed")
         if self.session:
             await self.session.close()
             self.session = None
@@ -212,6 +230,74 @@ class Runtime:
         await self.start()
         self.hub.close_all(4000)
         return True
+
+    # ------------------------------------------------------------------ history on disk
+    def _open_archive(self):
+        """Open this venue's history folder and reload what the last run saved."""
+        self.archive = None
+        if self.archive_root is None:
+            return
+        from .archive import Archive
+        key = ("demo-" if self.demo else "") + self.venue_key
+        self.archive = Archive(Path(self.archive_root) / key, self.archive_days)
+        t = now_ms()
+        eng = self.engine
+        try:
+            recs = self.archive.read_heat("5s", t - self.settings.hist_hours * 3600_000, t)
+            eng.tiers.restore(recs)
+            bars = self.archive.read_bars(t - self.settings.extra.get("levels_keep_min", 1440) * 60_000, t)
+            eng.flow.restore(bars)
+            if recs or bars:
+                log.info("history restored: %d heatmap columns (5 s), %d footprint bars", len(recs), len(bars))
+        except Exception:
+            log.exception("restoring history failed")
+
+    def _save_history(self, t: float):
+        eng = self.engine
+        s5, m1 = eng.tiers.take_new()
+        if s5:
+            self.archive.append_heat("5s", s5)
+        if m1:
+            self.archive.append_heat("1m", m1)
+        if eng.backfill_state == "done":
+            bars = eng.flow.completed_bars(t)
+            if bars:
+                self.archive.append_bars(bars)
+
+    async def _archive_loop(self):
+        await self.ready.wait()
+        last_prune = 0.0
+        while True:
+            await asyncio.sleep(60)
+            try:
+                t = now_ms()
+                await asyncio.to_thread(self._save_history, t)
+                if t - last_prune > 6 * 3600_000:
+                    last_prune = t
+                    await asyncio.to_thread(self.archive.prune, t)
+            except Exception:
+                log.exception("saving history failed")
+
+    async def _daily_fill_loop(self):
+        """Complete past days of footprint from Binance's free daily trade files (data.binance.vision), in a separate
+        low-priority process so the live feed isn't slowed down. Re-checks every 6 hours for the newest day."""
+        v = self.engine.v
+        await asyncio.sleep(120)
+        while True:
+            try:
+                args = [sys.executable, "-m", "app.histfill", "--root", str(self.archive.root), "--days", str(self.fill_days),
+                        "--market", "cm" if v.inverse else "um", "--symbol", v.symbol, "--tick", str(v.tick),
+                        "--bucket", str(self.settings.bucket_usd), "--contract-usd", str(v.contract_usd or 0)]
+                if os.name != "nt" and shutil.which("nice"):
+                    args = ["nice", "-n", "15"] + args
+                proc = await asyncio.create_subprocess_exec(*args, cwd=str(Path(__file__).resolve().parent.parent),
+                                                            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+                out, _ = await proc.communicate()
+                for line in (out or b"").decode(errors="replace").splitlines()[-20:]:
+                    log.info("histfill: %s", line)
+            except Exception:
+                log.exception("footprint back-fill failed")
+            await asyncio.sleep(6 * 3600)
 
     # ------------------------------------------------------------------ clock
     async def _clock(self):

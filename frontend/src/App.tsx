@@ -1,4 +1,6 @@
 import { FrozenBar, KickedOverlay } from './panels/Account'
+import Tour from './panels/Tour'
+import { installHints } from './lib/hints'
 import { api, ApiError, loginUrl, type Me } from './lib/session'
 import { useEffect, useRef, useState } from 'react'
 import FootprintView from './charts/FootprintView'
@@ -12,6 +14,7 @@ import {
 import { store, useTopic } from './lib/store'
 import { CLASSIC_CSS, HEAT_CSS } from './lib/util'
 import SidePanel from './panels/SidePanel'
+import { tip, TIPS } from './lib/hints'
 import TopBar from './panels/TopBar'
 
 const BOTTOM: [BottomMode, string][] = [
@@ -64,6 +67,17 @@ export default function App() {
   const showHeat = p.view === 'heatmap' || p.view === 'split'
   const showFoot = p.view === 'footprint' || p.view === 'split'
   const nTools = store.ranges.length + store.anchors.length
+  useEffect(() => installHints(), [])
+  // the tour shows the heatmap and the footprint together, then puts the user's own view back
+  const viewBeforeTour = useRef<ViewMode | null>(null)
+  const tourStart = () => {
+    viewBeforeTour.current = p.view
+    set('view', 'split')
+  }
+  const tourEnd = () => {
+    if (viewBeforeTour.current) set('view', viewBeforeTour.current)
+    viewBeforeTour.current = null
+  }
 
   const anchorPreset = (k: string) => {
     const now = store.now()
@@ -89,32 +103,32 @@ export default function App() {
       <div className="toolbar">
         <div className="seg" role="tablist" aria-label="Chart">
           {(['heatmap', 'footprint', 'split', 'tpo'] as ViewMode[]).map((v) => (
-            <button key={v} className={p.view === v ? 'on' : ''} onClick={() => set('view', v)}>
+            <button key={v} className={p.view === v ? 'on' : ''} onClick={() => set('view', v)} {...tip(`view.${v}`)}>
               {v === 'heatmap' ? 'Heatmap' : v === 'footprint' ? 'Footprint' : v === 'split' ? 'Both' : 'TPO'}
             </button>
           ))}
         </div>
         {showHeat && (
           <div className="group">
-            <label className="slider" title="Heatmap contrast">
+            <label className="slider" {...tip('heat.contrast')}>
               <span className="ramp" style={{ background: `linear-gradient(90deg, ${p.heatPalette === 'classic' ? CLASSIC_CSS : HEAT_CSS})` }} />
               <input type="range" min={0.3} max={3} step={0.05} value={p.contrast} onChange={(e) => set('contrast', +e.target.value)} aria-label="Heatmap contrast" />
             </label>
-            <label className="slider bub" title={`Bubble size ${p.bubbleScale.toFixed(1)}×`}>
+            <label className="slider bub" {...tip('heat.bubbleSize')}>
               <span className="bub-ico" aria-hidden="true" />
               <input type="range" min={0.4} max={6} step={0.1} value={p.bubbleScale} onChange={(e) => set('bubbleScale', +e.target.value)} aria-label="Bubble size" />
             </label>
             <div className="seg sm" aria-label="Order book">
-              <button className={p.book === 'primary' ? 'on' : ''} onClick={() => set('book', 'primary')} title="Binance order book only">Binance</button>
-              <button className={p.book === 'combined' ? 'on' : ''} onClick={() => set('book', 'combined')} title="Binance + Bybit + OKX books, basis-adjusted">All books</button>
+              <button className={p.book === 'primary' ? 'on' : ''} onClick={() => set('book', 'primary')} {...tip('heat.bookPrimary')}>Binance</button>
+              <button className={p.book === 'combined' ? 'on' : ''} onClick={() => set('book', 'combined')} {...tip('heat.bookAll')}>All books</button>
             </div>
-            <label className="sel">
+            <label className="sel" {...tip('heat.min')}>
               Min
               <select value={p.minBubble} onChange={(e) => set('minBubble', +e.target.value)}>
                 {[0, 0.05, 0.2, 0.5, 1, 2, 5].map((v) => <option key={v} value={v}>{v} BTC</option>)}
               </select>
             </label>
-            <label className="sel" title="Lower pane">
+            <label className="sel" {...tip('heat.bottom')}>
               <select value={p.bottom} onChange={(e) => set('bottom', e.target.value as BottomMode)}>
                 {BOTTOM.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
               </select>
@@ -123,26 +137,26 @@ export default function App() {
         )}
         {showFoot && (
           <div className="group">
-            <label className="sel">
+            <label className="sel" {...tip('fp.bars')}>
               Bars
               <select value={p.tf} onChange={(e) => set('tf', +e.target.value)}>
                 {[1, 3, 5, 15, 30, 60, 240].map((v) => <option key={v} value={v}>{v < 60 ? `${v}m` : `${v / 60}h`}</option>)}
               </select>
             </label>
-            <label className="sel">
+            <label className="sel" {...tip('fp.rows')}>
               Rows
               <select value={p.row} onChange={(e) => set('row', +e.target.value)}>
                 <option value={0}>Auto</option>
                 {[1, 2, 5, 10, 25, 50, 100, 250].map((v) => <option key={v} value={v}>${v}</option>)}
               </select>
             </label>
-            <label className="sel">
+            <label className="sel" {...tip('fp.show')}>
               Show
               <select value={p.fpMode} onChange={(e) => set('fpMode', e.target.value as FpMode)}>
                 {FP_MODES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
               </select>
             </label>
-            <label className="sel">
+            <label className="sel" {...tip('fp.source')}>
               Source
               <select value={p.fpSrc} onChange={(e) => set('fpSrc', e.target.value as Prefs['fpSrc'])}>
                 {SOURCES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
@@ -152,43 +166,43 @@ export default function App() {
         )}
         {p.view === 'tpo' && (
           <div className="group">
-            <label className="sel">
+            <label className="sel" {...tip('tpo.session')}>
               Session
               <select value={p.tpoSession} onChange={(e) => set('tpoSession', e.target.value as TpoSession)}>
                 {(Object.keys(TPO_SESSIONS) as TpoSession[]).map((k) => <option key={k} value={k}>{TPO_SESSIONS[k].label}</option>)}
               </select>
             </label>
-            <label className="sel">
+            <label className="sel" {...tip('tpo.days')}>
               Show
               <select value={p.tpoDays} onChange={(e) => set('tpoDays', +e.target.value)}>
                 {[1, 2, 3, 5, 7, 10].map((v) => <option key={v} value={v}>{v} session{v > 1 ? 's' : ''}</option>)}
               </select>
             </label>
-            <Toggle on={p.tpoSplit} onClick={() => set('tpoSplit', !p.tpoSplit)}>Split letters</Toggle>
-            <Toggle on={p.tpoComposite} onClick={() => set('tpoComposite', !p.tpoComposite)}>Composite</Toggle>
+            <Toggle on={p.tpoSplit} onClick={() => set('tpoSplit', !p.tpoSplit)} tipId="tpo.split">Split letters</Toggle>
+            <Toggle on={p.tpoComposite} onClick={() => set('tpoComposite', !p.tpoComposite)} tipId="tpo.composite">Composite</Toggle>
           </div>
         )}
         {p.view !== 'tpo' && (
           <div className="group">
-            <Toggle on={p.tool === 'range'} onClick={() => setTool(p.tool === 'range' ? 'none' : 'range')} title="Drag across the chart to build a fixed-range volume profile">Range profile</Toggle>
-            <Toggle on={p.tool === 'avwap'} onClick={() => setTool(p.tool === 'avwap' ? 'none' : 'avwap')} title="Click the chart where the VWAP should start">Anchor VWAP</Toggle>
-            <select className="bare" value="" onChange={(e) => anchorPreset(e.target.value)} aria-label="Anchor VWAP preset">
+            <Toggle on={p.tool === 'range'} onClick={() => setTool(p.tool === 'range' ? 'none' : 'range')} tipId="tool.range">Range profile</Toggle>
+            <Toggle on={p.tool === 'avwap'} onClick={() => setTool(p.tool === 'avwap' ? 'none' : 'avwap')} tipId="tool.avwap">Anchor VWAP</Toggle>
+            <select className="bare" value="" onChange={(e) => anchorPreset(e.target.value)} aria-label="Anchor VWAP preset" {...tip('tool.preset')}>
               <option value="" disabled>Anchor…</option>
               <option value="week">Weekly open</option>
               <option value="day">Daily open (UTC)</option>
               <option value="funding">Last funding</option>
               <option value="liq">Last big liquidation</option>
             </select>
-            {nTools > 0 && <button className="tog" onClick={() => store.clearTools()}>Clear ({nTools})</button>}
+            {nTools > 0 && <button className="tog" onClick={() => store.clearTools()} {...tip('tool.clear')}>Clear ({nTools})</button>}
           </div>
         )}
         <div className="grow" />
         <Layers p={p} set={set} />
       </div>
       <main className={`main ${p.view}`}>
-        {showHeat && <section className="pane heat"><HeatmapView p={p} onTool={setTool} /></section>}
-        {showFoot && <section className="pane foot"><FootprintView p={p} onTool={setTool} /></section>}
-        {p.view === 'tpo' && <section className="pane foot"><TpoView p={p} /></section>}
+        {showHeat && <section className="pane heat" {...tip('pane.heat')}><HeatmapView p={p} onTool={setTool} /></section>}
+        {showFoot && <section className="pane foot" {...tip('pane.foot')}><FootprintView p={p} onTool={setTool} /></section>}
+        {p.view === 'tpo' && <section className="pane foot" {...tip('pane.tpo')}><TpoView p={p} /></section>}
         <p className="hint">
           {p.tool === 'range' ? 'Drag across the chart to build a range profile · Esc cancels'
             : p.tool === 'avwap' ? 'Click where the VWAP should start · Esc cancels'
@@ -198,6 +212,7 @@ export default function App() {
       <SidePanel p={p} set={set} />
       <FrozenBar />
       <KickedOverlay />
+      <Tour onStart={tourStart} onEnd={tourEnd} />
     </div>
   )
 }
@@ -222,11 +237,12 @@ function Layers({ p, set }: { p: Prefs; set: <K extends keyof Prefs>(k: K, v: Pr
     return () => document.removeEventListener('mousedown', h)
   }, [open])
   const T = ({ k, children }: { k: keyof Prefs; children: React.ReactNode }) => (
-    <Toggle on={!!p[k]} onClick={() => set(k, !p[k] as any)}>{children}</Toggle>
+    <Toggle on={!!p[k]} onClick={() => set(k, !p[k] as any)} tipId={`L.${k}` in TIPS ? (`L.${k}` as keyof typeof TIPS) : undefined}>{children}</Toggle>
   )
+  const L = (k: string) => (`L.${k}` in TIPS ? tip(`L.${k}` as keyof typeof TIPS) : {})
   return (
     <div className="layers" ref={ref}>
-      <button className={`tog ${open ? 'on' : ''}`} aria-expanded={open} onClick={toggle}>Layers ▾</button>
+      <button className={`tog ${open ? 'on' : ''}`} aria-expanded={open} onClick={toggle} {...tip('layers')}>Layers ▾</button>
       {open && (
         <div className="pop" role="dialog" aria-label="Chart layers" style={pos}>
           <section>
@@ -238,12 +254,12 @@ function Layers({ p, set }: { p: Prefs; set: <K extends keyof Prefs>(k: K, v: Pr
               <T k="dom">Depth ladder</T>
             </div>
             <div className="row">
-              <label className="sel">Pull / stack
+              <label className="sel" {...L('domWin')}>Pull / stack
                 <select value={p.domWin} onChange={(e) => set('domWin', +e.target.value)}>
                   {[0, 5, 30, 60].map((v) => <option key={v} value={v}>{v ? `${v} s` : 'Off'}</option>)}
                 </select>
               </label>
-              <label className="sel">Big trade
+              <label className="sel" {...L('bigTrade')}>Big trade
                 <select value={p.bigTrade} onChange={(e) => set('bigTrade', +e.target.value)}>
                   {[2, 5, 10, 20, 50, 100].map((v) => <option key={v} value={v}>{v} BTC</option>)}
                 </select>
@@ -253,13 +269,13 @@ function Layers({ p, set }: { p: Prefs; set: <K extends keyof Prefs>(k: K, v: Pr
           <section>
             <h4>Heatmap</h4>
             <div className="row">
-              <label className="sel">Colours
+              <label className="sel" {...L('heatPalette')}>Colours
                 <select value={p.heatPalette} onChange={(e) => set('heatPalette', e.target.value as Prefs['heatPalette'])}>
                   <option value="classic">Classic (blue → red)</option>
                   <option value="thermal">Thermal (teal → white)</option>
                 </select>
               </label>
-              <label className="sel">Price rows
+              <label className="sel" {...L('heatRows')}>Price rows
                 <select value={p.heatRows} onChange={(e) => set('heatRows', +e.target.value)}>
                   <option value={0}>Auto</option>
                   {[1, 2, 5, 10, 20, 25, 50].map((v) => <option key={v} value={v}>${v}</option>)}
@@ -271,18 +287,18 @@ function Layers({ p, set }: { p: Prefs; set: <K extends keyof Prefs>(k: K, v: Pr
           <section>
             <h4>Bubbles</h4>
             <div className="row">
-              <div className="seg sm" aria-label="Bubble style">
+              <div className="seg sm" aria-label="Bubble style" {...L('bubbleStyle')}>
                 {([['3d', '3D'], ['flat', '2D dots'], ['pie', 'Buy/sell pie']] as const).map(([k, l]) => (
                   <button key={k} className={p.bubbleStyle === k ? 'on' : ''} onClick={() => set('bubbleStyle', k)}>{l}</button>
                 ))}
               </div>
-              <div className="seg sm" aria-label="Bubble size by">
-                <button className={p.bubbleSizeBy === 'total' ? 'on' : ''} onClick={() => set('bubbleSizeBy', 'total')} title="Size = all traded BTC">Total volume</button>
-                <button className={p.bubbleSizeBy === 'delta' ? 'on' : ''} onClick={() => set('bubbleSizeBy', 'delta')} title="Size = buy minus sell">Volume delta</button>
+              <div className="seg sm" aria-label="Bubble size by" {...L('bubbleSizeBy')}>
+                <button className={p.bubbleSizeBy === 'total' ? 'on' : ''} onClick={() => set('bubbleSizeBy', 'total')}>Total volume</button>
+                <button className={p.bubbleSizeBy === 'delta' ? 'on' : ''} onClick={() => set('bubbleSizeBy', 'delta')}>Volume delta</button>
               </div>
             </div>
             <div className="row">
-              <label className="sel">Grouping
+              <label className="sel" {...L('bubbleCluster')}>Grouping
                 <select value={p.bubbleCluster} onChange={(e) => set('bubbleCluster', e.target.value as Prefs['bubbleCluster'])}>
                   <option value="smart">Smart</option>
                   <option value="1s">1 s</option>
@@ -331,7 +347,7 @@ function Layers({ p, set }: { p: Prefs; set: <K extends keyof Prefs>(k: K, v: Pr
               <T k="devPoc">Developing POC</T>
             </div>
             <div className="row">
-              <label className="sel">VWAP
+              <label className="sel" {...L('vwap')}>VWAP
                 <select value={p.vwap} onChange={(e) => set('vwap', e.target.value as Prefs['vwap'])}>
                   <option value="off">Off</option>
                   <option value="day">Daily</option>
@@ -374,19 +390,19 @@ function Layers({ p, set }: { p: Prefs; set: <K extends keyof Prefs>(k: K, v: Pr
               <T k="showImb">Imbalances</T>
             </div>
             <div className="row">
-              <label className="sel" title="Diagonal imbalance ratio">
+              <label className="sel" {...L('imbalance')}>
               Imb.
                 <select value={p.imbalance} onChange={(e) => set('imbalance', +e.target.value)}>
                 {[1.5, 2, 3, 4, 5].map((v) => <option key={v} value={v}>{v * 100}%</option>)}
               </select>
             </label>
-              <label className="sel" title="Dim cells smaller than this">
+              <label className="sel" {...L('fpMin')}>
               Filter
                 <select value={p.fpMin} onChange={(e) => set('fpMin', +e.target.value)}>
                 {[0, 0.5, 1, 2, 5, 10].map((v) => <option key={v} value={v}>{v ? `≥ ${v}` : 'Off'}</option>)}
               </select>
             </label>
-              <label className="sel" title="Highlight clusters at or above this size">
+              <label className="sel" {...L('cluster')}>
               Cluster
                 <select value={p.cluster} onChange={(e) => set('cluster', +e.target.value)}>
                 {[0, 5, 10, 25, 50, 100, 250].map((v) => <option key={v} value={v}>{v ? `≥ ${v} BTC` : 'Off'}</option>)}
@@ -400,9 +416,9 @@ function Layers({ p, set }: { p: Prefs; set: <K extends keyof Prefs>(k: K, v: Pr
   )
 }
 
-export function Toggle({ on, onClick, children, title }: { on: boolean; onClick: () => void; children: React.ReactNode; title?: string }) {
+export function Toggle({ on, onClick, children, tipId }: { on: boolean; onClick: () => void; children: React.ReactNode; tipId?: keyof typeof TIPS }) {
   return (
-    <button className={`tog ${on ? 'on' : ''}`} aria-pressed={on} onClick={onClick} title={title}>
+    <button className={`tog ${on ? 'on' : ''}`} aria-pressed={on} onClick={onClick} {...(tipId ? tip(tipId) : {})}>
       {children}
     </button>
   )

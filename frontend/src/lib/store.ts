@@ -12,6 +12,8 @@ type Topic = 'cols' | 'bars' | 'tape' | 'abs' | 'liqs' | 'gex' | 'stats' | 'heal
 
 const HDR = 40
 const BARS_KEEP = 10080 + 60
+const TIER_5S = 5000
+const MAX_OLD_COLS = 12000 // merged history columns kept in the browser (~80 MB at most)
 const LEVELS_KEEP_MS = 24 * 3600_000
 const XLEVELS_KEEP_MS = 6 * 3600_000
 
@@ -28,8 +30,14 @@ export function decodeColumns(buf: ArrayBuffer, cum: Cum, spot: Set<number>): Co
   const ver = dv.getUint8(1)
   const cnt = dv.getUint16(2, true)
   const out: Column[] = []
-  if (typ !== 1) return out
+  if (typ !== 1 && typ !== 2) return out
   let off = 4
+  // type 2 = older history: columns that each cover dt ms (5 s or 1 min) instead of one live 250 ms step
+  let dt: number | undefined
+  if (typ === 2) {
+    dt = dv.getUint32(4, true)
+    off = 8
+  }
   const triples = (k: number) => {
     const idx = new Int32Array(k)
     const a = new Float32Array(k)
@@ -126,10 +134,109 @@ export function decodeColumns(buf: ArrayBuffer, cum: Cum, spot: Set<number>): Co
     cum.z = [cum.z[0] + sz[0] - sz[1], cum.z[1] + sz[2] - sz[3], cum.z[2] + sz[4] - sz[5]]
     out.push({
       t, bb, ba, base, qty, last, trIdx, trBuy, trSell, xtIdx, xtBuy, xtSell, cbIdx, cbQty, ex, sz, prem, oi,
-      liqL, liqS, buy, sell, cvd: cum.cvd, pb, ps, sb, ss, cvdP: cum.cvdP, cvdS: cum.cvdS, cvdZ: cum.z,
+      liqL, liqS, buy, sell, cvd: cum.cvd, pb, ps, sb, ss, cvdP: cum.cvdP, cvdS: cum.cvdS, cvdZ: cum.z, dt,
     })
   }
   return out
+}
+
+function addPairs(acc: Map<number, [number, number]>, idx: Int32Array, a: Float32Array, b: Float32Array) {
+  for (let k = 0; k < idx.length; k++) {
+    const e = acc.get(idx[k])
+    if (e) {
+      e[0] += a[k]
+      e[1] += b[k]
+    } else acc.set(idx[k], [a[k], b[k]])
+  }
+}
+
+function fromPairs(m: Map<number, [number, number]>) {
+  const idx = new Int32Array(m.size)
+  const a = new Float32Array(m.size)
+  const b = new Float32Array(m.size)
+  let i = 0
+  for (const [k, [x, y]] of m) {
+    idx[i] = k
+    a[i] = x
+    b[i++] = y
+  }
+  return [idx, a, b] as const
+}
+
+/** Merge consecutive columns into one that covers dt ms (same rules as the server, engine/heattiers.py): resting
+ *  size averaged, trades and volumes summed, prices and running totals taken from the last column. */
+export function mergeColumns(cols: Column[], t0: number, dt: number): Column {
+  const k = cols.length
+  const last = cols[k - 1]
+  let lo = Infinity
+  let hi = -Infinity
+  for (const c of cols) {
+    lo = Math.min(lo, c.base)
+    hi = Math.max(hi, c.base + c.qty.length)
+  }
+  const qty = new Float32Array(hi - lo)
+  const cb = new Map<number, number>()
+  const tr = new Map<number, [number, number]>()
+  const xt = new Map<number, [number, number]>()
+  const ex = new Map<number, [number, number]>()
+  const sz = new Float32Array(6)
+  let prem = NaN
+  let oi = NaN
+  let liqL = 0
+  let liqS = 0
+  let buy = 0
+  let sell = 0
+  let pb = 0
+  let ps = 0
+  let sb = 0
+  let ss = 0
+  for (const c of cols) {
+    const o = c.base - lo
+    for (let i = 0; i < c.qty.length; i++) qty[o + i] += c.qty[i]
+    for (let i = 0; i < c.cbIdx.length; i++) cb.set(c.cbIdx[i], (cb.get(c.cbIdx[i]) ?? 0) + c.cbQty[i])
+    addPairs(tr, c.trIdx, c.trBuy, c.trSell)
+    addPairs(xt, c.xtIdx, c.xtBuy, c.xtSell)
+    for (let i = 0; i < c.ex.length; i += 3) {
+      const e = ex.get(c.ex[i])
+      if (e) {
+        e[0] += c.ex[i + 1]
+        e[1] += c.ex[i + 2]
+      } else ex.set(c.ex[i], [c.ex[i + 1], c.ex[i + 2]])
+    }
+    for (let i = 0; i < 6; i++) sz[i] += c.sz[i]
+    if (Number.isFinite(c.prem)) prem = c.prem
+    if (Number.isFinite(c.oi)) oi = c.oi
+    liqL += c.liqL
+    liqS += c.liqS
+    buy += c.buy
+    sell += c.sell
+    pb += c.pb
+    ps += c.ps
+    sb += c.sb
+    ss += c.ss
+  }
+  for (let i = 0; i < qty.length; i++) qty[i] /= k
+  const cbIdx = new Int32Array(cb.size)
+  const cbQty = new Float32Array(cb.size)
+  let j = 0
+  for (const [b, q] of cb) {
+    cbIdx[j] = b
+    cbQty[j++] = q / k
+  }
+  const [trIdx, trBuy, trSell] = fromPairs(tr)
+  const [xtIdx, xtBuy, xtSell] = fromPairs(xt)
+  const exArr = new Float32Array(ex.size * 3)
+  j = 0
+  for (const [v, [b, sl]] of ex) {
+    exArr[j++] = v
+    exArr[j++] = b
+    exArr[j++] = sl
+  }
+  return {
+    t: t0, bb: last.bb, ba: last.ba, base: lo, qty, last: last.last, trIdx, trBuy, trSell, xtIdx, xtBuy, xtSell, cbIdx,
+    cbQty, ex: exArr, sz, prem, oi, liqL, liqS, buy, sell, cvd: last.cvd, pb, ps, sb, ss, cvdP: last.cvdP,
+    cvdS: last.cvdS, cvdZ: last.cvdZ, dt,
+  }
 }
 
 function pairs(f: number[] | undefined, into: Map<number, [number, number]>) {
@@ -207,6 +314,11 @@ class Store {
   frozenAt: number | null = null // expired plan: time of the frozen snapshot
   frozenEmpty = false // expired plan and the snapshot allowance is used up: nothing to show
   lastColAt = 0 // performance.now() when the last column arrived
+  barsBusy = 0 // footprint history requests in flight
+  private barReq = new Set<number>() // 6-hour blocks of footprint history already asked for
+  histBusy = false // older heatmap history is being fetched
+  histDone = false // the server has nothing older
+  private histAt = 0
   serverSkew = 0 // server t - local Date.now()
   // user tools shared by all charts
   ranges: RangeProfile[] = []
@@ -286,12 +398,91 @@ class Store {
       if (arr.length && c.t <= arr[arr.length - 1].t) continue
       arr.push(c)
     }
-    const cap = this.config ? Math.ceil((this.config.history_min * 60000) / this.config.column_ms) + 40 : 8000
-    if (arr.length > cap + 200) arr.splice(0, arr.length - cap)
+    this.compactOld()
     const lc = arr[arr.length - 1]
     this.lastColAt = performance.now()
     this.serverSkew = lc.t - Date.now()
     this.bump('cols')
+  }
+
+  /** Live columns older than the full-detail window are merged into 5-second columns rather than dropped, so the
+   *  picture stays continuous with the older history fetched from the server. */
+  private compactOld() {
+    const arr = this.cols
+    const cap = this.config ? Math.ceil((this.config.history_min * 60000) / this.config.column_ms) + 40 : 8000
+    let first = 0 // first live (250 ms) column
+    while (first < arr.length && arr[first].dt) first++
+    if (arr.length - first <= cap + 200) return
+    let cut = arr.length - cap
+    // only merge whole 5-second windows
+    while (cut < arr.length && Math.floor(arr[cut].t / TIER_5S) === Math.floor(arr[cut - 1].t / TIER_5S)) cut++
+    const merged: Column[] = []
+    let i = first
+    while (i < cut) {
+      const w = Math.floor(arr[i].t / TIER_5S)
+      let j = i
+      while (j < cut && Math.floor(arr[j].t / TIER_5S) === w) j++
+      merged.push(mergeColumns(arr.slice(i, j), w * TIER_5S, TIER_5S))
+      i = j
+    }
+    arr.splice(first, cut - first, ...merged)
+    const extra = first + merged.length - MAX_OLD_COLS
+    if (extra > 0) {
+      arr.splice(0, extra)
+      this.histDone = false
+    }
+  }
+
+  /** Fetch heatmap history older than the first column we hold (5 s columns for the last 12 h, then 1 min). */
+  async loadOlder(span: number) {
+    if (this.histBusy || this.histDone || !this.cols.length || this.conn !== 'live') return
+    if (performance.now() - this.histAt < 800) return
+    this.histBusy = true
+    this.histAt = performance.now()
+    this.bump('cols')
+    const before = this.cols[0].t
+    try {
+      const r = await fetch(`/api/history/heatmap?before=${Math.floor(before)}&span=${Math.round(span)}`, { credentials: 'same-origin' })
+      if (!r.ok) {
+        if (r.status === 403 || r.status === 404) this.histDone = true
+        return
+      }
+      const buf = await r.arrayBuffer()
+      const dv = new DataView(buf)
+      const cum: Cum = { cvd: 0, cvdP: 0, cvdS: 0, z: [0, 0, 0] }
+      const got: Column[] = []
+      for (let off = 0; off + 4 <= buf.byteLength;) {
+        const n = dv.getUint32(off, true)
+        for (const c of decodeColumns(buf.slice(off + 4, off + 4 + n), cum, this.spotIds)) got.push(c)
+        off += 4 + n
+      }
+      if (this.cols[0]?.t !== before) return // reconnected meanwhile
+      const older = got.filter((c) => c.t < before)
+      if (!older.length) {
+        this.histDone = true
+        return
+      }
+      // running totals (CVD lines) were counted from the start of this batch: shift them to join the first column
+      const f = this.cols[0]
+      const L = older[older.length - 1]
+      const d = f.cvd - (f.buy - f.sell) - L.cvd
+      const dP = f.cvdP - (f.pb - f.ps) - L.cvdP
+      const dS = f.cvdS - (f.sb - f.ss) - L.cvdS
+      const z = f.cvdZ
+      const dZ = [z[0] - (f.sz[0] - f.sz[1]) - L.cvdZ[0], z[1] - (f.sz[2] - f.sz[3]) - L.cvdZ[1], z[2] - (f.sz[4] - f.sz[5]) - L.cvdZ[2]]
+      for (const c of older) {
+        c.cvd += d
+        c.cvdP += dP
+        c.cvdS += dS
+        c.cvdZ = [c.cvdZ[0] + dZ[0], c.cvdZ[1] + dZ[1], c.cvdZ[2] + dZ[2]]
+      }
+      this.cols = older.concat(this.cols)
+    } catch {
+      /* network hiccup: the next scroll tries again */
+    } finally {
+      this.histBusy = false
+      this.bump('cols')
+    }
   }
 
   private onJson(d: any) {
@@ -302,9 +493,11 @@ class Store {
         this.venues = d.venues ?? []
         this.demo = !!d.demo
         this.cols = []
+        this.histDone = false
         this.cum = { cvd: 0, cvdP: 0, cvdS: 0, z: [0, 0, 0] }
         this.bars.clear()
         this.barTimes = []
+        this.barReq.clear()
         this.setBars(d.bars)
         this.sweeps = d.sweeps ?? []
         this.liqs = d.liqs ?? []
@@ -450,10 +643,44 @@ class Store {
       const b = this.bars.get(t)!
       b.sl.clear()
       b.xl.clear()
-      if (t < cutL && b.lv.size && !b.ax) {
+      if (t < cutL && b.lv.size && !b.ax && !b.hist) {
         b.lv.clear()
         b.ax = 2
       }
+    }
+  }
+
+  /** Per-price footprint for older bars (candles only in memory) from the server's archive, in 6-hour blocks. */
+  loadBarsFor(t0: number, t1: number) {
+    if (this.conn !== 'live' || !this.barTimes.length) return
+    const BLOCK = 6 * 3600_000
+    const oldest = this.barTimes[0]
+    for (let b = Math.floor(Math.max(t0, oldest) / BLOCK) * BLOCK; b < t1; b += BLOCK) {
+      if (this.barReq.has(b) || this.barReq.size > 200) continue
+      this.barReq.add(b)
+      this.barsBusy++
+      this.bump('bars')
+      fetch(`/api/history/footprint?start=${b}&end=${b + BLOCK}`, { credentials: 'same-origin' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          let added = false
+          for (const j of d?.bars ?? []) {
+            if (j.t < this.barTimes[0]) continue
+            const prev = this.bars.get(j.t)
+            if (prev && !prev.ax && prev.lv.size) continue // already has full detail
+            const nb = toBar(j)
+            nb.hist = true
+            this.bars.set(j.t, nb)
+            if (!prev) added = true
+            this.bump('bars')
+          }
+          if (added) this.barTimes = Array.from(this.bars.keys()).sort((a, b) => a - b)
+        })
+        .catch(() => this.barReq.delete(b))
+        .finally(() => {
+          this.barsBusy--
+          this.bump('bars')
+        })
     }
   }
 

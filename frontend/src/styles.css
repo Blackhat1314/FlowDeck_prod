@@ -391,3 +391,30 @@ figcaption i { display: inline-block; width: 8px; height: 8px; border-radius: 2p
 .kicked-card a, .kicked-card button { text-align: center; border: 0; font-size: inherit; cursor: pointer; padding: 10px; border-radius: 8px; text-decoration: none; font-weight: 600; }
 .kicked-card .primary { background: var(--amber); color: #1a1205; }
 .kicked-card .ghost { color: var(--dim); border: 1px solid var(--line); font-weight: 500; }
+
+/* hover help (2 s) */
+.hint-tip { position: fixed; z-index: 120; max-width: 300px; padding: 9px 12px; border-radius: 9px; background: #0f1d30;
+  border: 1px solid #36557c; box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55); color: #d5deea; font-size: 12.5px; line-height: 1.45;
+  pointer-events: none; white-space: normal; display: grid; gap: 3px; animation: hintIn 0.14s ease-out; }
+.hint-tip b { color: #fff; font-size: 13px; font-weight: 600; }
+@keyframes hintIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+.acct-sw { float: right; margin-left: 12px; padding: 1px 8px; border-radius: 9px; font-size: 11px; background: var(--panel2); color: var(--dim); }
+.acct-sw.on { background: rgba(46, 230, 160, 0.16); color: var(--buy); }
+
+/* first-visit tour */
+.tour { position: fixed; inset: 0; z-index: 110; }
+.tour-dim { position: absolute; inset: 0; background: rgba(3, 8, 15, 0.62); }
+.tour-spot { position: absolute; border-radius: 10px; box-shadow: 0 0 0 9999px rgba(3, 8, 15, 0.62); outline: 2px solid #ffb547;
+  transition: left 0.25s ease, top 0.25s ease, width 0.25s ease, height 0.25s ease; pointer-events: none; }
+.tour-card { position: absolute; padding: 16px 16px 14px; border-radius: 12px; background: #11233a; border: 1px solid #3a5a86;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.6); white-space: normal; display: grid; gap: 8px; }
+.tour-card h3 { margin: 0; font-size: 16px; color: #fff; }
+.tour-card p { margin: 0; color: #c7d2e0; font-size: 13.5px; line-height: 1.5; }
+.tour-n { color: var(--dim); font-size: 11.5px; }
+.tour-btns { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.tour-btns .grow { flex: 1; }
+.tour-btns button { border: 1px solid var(--line); background: var(--panel2); color: var(--text); border-radius: 8px; padding: 7px 14px; cursor: pointer; }
+.tour-btns .primary { background: var(--amber); border-color: var(--amber); color: #1a1205; font-weight: 600; }
+.tour-btns .tour-skip { background: none; border-color: transparent; color: var(--dim); padding-left: 0; }
+.tour-btns .tour-skip:hover { color: var(--text); }
+@media (prefers-reduced-motion: reduce) { .tour-spot { transition: none; } .hint-tip { animation: none; } }

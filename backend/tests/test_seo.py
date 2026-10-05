@@ -31,3 +31,19 @@ def test_auth_state_is_quiet_when_signed_out():
     with TestClient(main.app, base_url="http://testserver") as c:
         r = c.get("/api/auth/state")
         assert r.status_code == 200 and r.json() == {"user": None}
+
+
+def test_tour_flag_and_guide():
+    from app.main import accounts
+    with TestClient(main.app, base_url="http://testserver") as c:
+        main.signup_ip.hits.clear()
+        J = {"origin": "http://testserver"}
+        r = c.post("/api/auth/signup", json={"name": "Tour", "email": "tour@example.com", "password": "password123"}, headers=J)
+        assert r.json()["user"]["tour_done"] is False
+        assert c.post("/api/me/tour", json={"done": True}, headers=J).status_code == 200
+        assert c.get("/api/auth/me").json()["user"]["tour_done"] is True
+        c.post("/api/me/tour", json={"done": False}, headers=J)
+        assert c.get("/api/auth/me").json()["user"]["tour_done"] is False
+        if (main.STATIC / "guide.html").exists():
+            g = c.get("/guide")
+            assert g.status_code == 200 and "Field Manual" in g.text

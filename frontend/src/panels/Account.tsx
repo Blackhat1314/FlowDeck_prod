@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, ApiError, loginUrl, logout, mailLink, REASONS, timeLeft } from '../lib/session'
 import { paymentInProgress, payWithRazorpay } from '../lib/razorpay'
+import { hintsOn, setHintsOn, tip } from '../lib/hints'
+import { startTour } from './Tour'
 import { store, useTopic } from '../lib/store'
 
 function useTick(ms: number) {
@@ -85,6 +87,7 @@ export function AccountMenu() {
   useTick(30_000)
   const [open, setOpen] = useState(false)
   const [pw, setPw] = useState(false)
+  const [hints, setHints] = useState(hintsOn)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
@@ -112,7 +115,7 @@ export function AccountMenu() {
   const warn = u.role !== 'admin' && (left == null ? false : left < 86_400_000)
   return (
     <div className="acct" ref={ref}>
-      <button className={`acct-btn ${warn ? 'warn' : ''}`} onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="menu">
+      <button className={`acct-btn ${warn ? 'warn' : ''}`} onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="menu" {...tip('top.account')}>
         <span className="acct-tag">{tag}</span>
         <span className="avatar" aria-hidden>{initials}</span>
         <span className="sr">Account menu</span>
@@ -130,6 +133,11 @@ export function AccountMenu() {
             {u.role !== 'admin' && <UpgradeButtons compact />}
           </div>
           {u.role === 'admin' && <a role="menuitem" href="/admin">Admin panel</a>}
+          <a role="menuitem" href="/guide" target="_blank" rel="noopener">Guide: how to read every chart</a>
+          <button role="menuitem" onClick={() => { setOpen(false); startTour() }}>Take the tour</button>
+          <button role="menuitem" aria-pressed={hints} onClick={() => { setHintsOn(!hints); setHints(!hints) }}>
+            Hover help <span className={`acct-sw ${hints ? 'on' : ''}`}>{hints ? 'On' : 'Off'}</span>
+          </button>
           <button role="menuitem" onClick={() => { setOpen(false); setPw(true) }}>{u.has_password === false ? 'Set a password' : 'Change password'}</button>
           <button role="menuitem" onClick={() => logout()}>Sign out</button>
         </div>

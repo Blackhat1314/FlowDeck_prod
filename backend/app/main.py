@@ -75,6 +75,7 @@ signup_ip = RateLimiter(8, 60 * 60_000)      # sign-ups per IP
 google_ip = RateLimiter(30, 15 * 60_000)     # Google sign-in attempts per IP
 pay_orders = RateLimiter(20, 60 * 60_000)    # checkout orders per account
 pay_verify = RateLimiter(30, 60 * 60_000)    # payment confirmations per account
+hist_reqs = RateLimiter(240, 10 * 60_000)    # history requests per account (scrolling back loads chunks)
 
 
 # ============================================================================================ presence
@@ -174,7 +175,10 @@ async def lifespan(app: FastAPI):
         log.warning("First admin created: %s / %s", email, pw)
         log.warning("Also saved to %s - change it after signing in.", note)
         log.warning("=" * 70)
-    runtime = Runtime(venue=os.environ.get("FLOW_VENUE", "usdm"), demo=os.environ.get("FLOW_DEMO") == "1")
+    runtime = Runtime(venue=os.environ.get("FLOW_VENUE", "usdm"), demo=os.environ.get("FLOW_DEMO") == "1",
+                      archive_root=DB_PATH.parent / "history",
+                      archive_days=int(os.environ.get("FLOWDECK_ARCHIVE_DAYS", "0") or 0),
+                      fill_days=int(os.environ.get("FLOWDECK_FILL_DAYS", "7") or 0))
     await runtime.start()
     task = asyncio.create_task(enforcer())
     yield
@@ -309,7 +313,8 @@ def me_json(u) -> dict:
     t = now_ms_int()
     return {"user": {"id": u["id"], "name": u["name"], "email": u["email"], "role": u["role"], "plan": u["plan"],
                      "expires_at": u["expires_at"], "state": accounts.state(u, t), "created_at": u["created_at"],
-                     "google": bool(u["google_sub"]), "has_password": bool(u["pw_hash"])},
+                     "google": bool(u["google_sub"]), "has_password": bool(u["pw_hash"]),
+                     "tour_done": bool(u["tour_done_at"])},
             "live": accounts.has_live(u, t), "server_time": t, "config": public_cfg()}
 
 
@@ -374,6 +379,12 @@ async def app_page(request: Request):
     if problem:
         return to_login(request, "/app", problem)
     return page("app.html")
+
+
+@app.get("/guide", include_in_schema=False)
+async def guide_page():
+    """The Flowdeck field manual (English): every chart, marker and setting explained."""
+    return page("guide.html")
 
 
 @app.get("/privacy", include_in_schema=False)
@@ -525,6 +536,49 @@ async def verify_payment(request: Request):
     return {"ok": True, "newly_paid": newly, "payment_id": payment_id, **me_json(nu)}
 
 
+# ============================================================================================ history (heatmap, footprint)
+def history_user(request: Request):
+    s, u = current(request)
+    if not accounts.has_live(u):
+        err("plan_ended", "History is part of the live plan.", 403)
+    if not hist_reqs.hit(str(u["id"])):
+        err("rate_limited", "Too many history requests. Wait a minute.", 429)
+    return u
+
+
+@app.get("/api/history/heatmap")
+async def heatmap_history(request: Request, before: float, span: float = 4 * 3600_000):
+    """Older heatmap columns ending at `before` (ms): 5-second columns while the last 12 hours have them, 1-minute
+    columns from the archive before that. Body: frames of u32 length | history message (see engine/heattiers.py)."""
+    history_user(request)
+    from .engine.heattiers import TIER_1M, TIER_5S, pack_history
+    eng = runtime.engine
+    span = max(60_000.0, min(float(span), 48 * 3600_000.0))
+    t1, t0 = float(before), float(before) - span
+    first5 = eng.tiers.first_time()
+    if first5 is not None and t1 > first5:
+        dt, recs = TIER_5S, eng.tiers.range(max(t0, first5), t1, 4320)
+    elif runtime.archive is not None:
+        dt, recs = TIER_1M, await asyncio.to_thread(runtime.archive.read_heat, "1m", t0, t1, 2880)
+    else:
+        dt, recs = TIER_1M, []
+    out = bytearray()
+    for i in range(0, len(recs), 400):
+        msg = pack_history(dt, recs[i:i + 400])
+        out += len(msg).to_bytes(4, "little") + msg
+    return Response(bytes(out), media_type="application/octet-stream",
+                    headers={"Cache-Control": "no-store", "X-History-Dt": str(dt), "X-History-Count": str(len(recs))})
+
+
+@app.get("/api/history/footprint")
+async def footprint_history(request: Request, start: float, end: float):
+    """Archived 1-minute footprint bars (per-price buy/sell) between start and end (ms), at most 3 days per call."""
+    history_user(request)
+    end = min(float(end), float(start) + 3 * 86_400_000)
+    bars = await asyncio.to_thread(runtime.archive.read_bars, float(start), end) if runtime.archive is not None else []
+    return Response(orjson.dumps({"bars": bars}), media_type="application/json", headers={"Cache-Control": "no-store"})
+
+
 @app.post("/api/auth/logout")
 async def logout(request: Request):
     await body(request)
@@ -551,6 +605,15 @@ async def auth_state(request: Request):
     """Like /api/auth/me, but answers 200 with user=null when signed out (the public pages ask on every visit)."""
     s, u, problem = accounts.session(request.cookies.get(COOKIE))
     return {"user": None} if problem else me_json(u)
+
+
+@app.post("/api/me/tour")
+async def tour_state(request: Request):
+    """The first-visit tour was finished or skipped (done=true), or the user wants it again (done=false)."""
+    d = await body(request)
+    s, u = current(request)
+    accounts.set_tour_done(u["id"], bool(d.get("done", True)))
+    return {"ok": True}
 
 
 @app.post("/api/auth/password")

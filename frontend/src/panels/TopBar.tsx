@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { store, useTopic } from '../lib/store'
 import { AccountMenu } from './Account'
 import { C, fmtPx, fmtQty, fmtUsd } from '../lib/util'
+import { tip, type TIPS } from '../lib/hints'
 
 function useClock(ms = 1000) {
   const [, set] = useState(0)
@@ -49,7 +50,7 @@ export default function TopBar() {
         onChange={(e) => store.switchVenue(e.target.value)}
         aria-label="Instrument"
         disabled={store.me?.user.role !== 'admin'}
-        title={store.me?.user.role === 'admin' ? 'Switch the instrument for every user' : 'Instrument (set by the admin)'}
+        {...tip('top.venue')}
       >
         {(store.venues.length ? store.venues : [{ key: 'usdm', label: 'BTCUSDT perpetual', exchange: 'Binance USDⓈ-M' }]).map((v) => (
           <option key={v.key} value={v.key}>
@@ -57,33 +58,34 @@ export default function TopBar() {
           </option>
         ))}
       </select>
-      <div className="px" style={{ color: store.lastDir > 0 ? C.buy : C.sell }}>
+      <div className="px" style={{ color: store.lastDir > 0 ? C.buy : C.sell }} {...tip('top.price')}>
         {fmtPx(last, 1)}
       </div>
       <div className="stats">
-        <Stat label="24h" value={chg != null ? `${chg > 0 ? '+' : ''}${chg.toFixed(2)}%` : '–'} color={chg != null ? (chg >= 0 ? C.buy : C.sell) : undefined} />
-        <Stat label="Mark" value={fmtPx(st?.mark, 1)} sub={st?.index != null ? `idx ${fmtPx(st.index, 0)}` : undefined} opt2 />
+        <Stat id="top.24h" label="24h" value={chg != null ? `${chg > 0 ? '+' : ''}${chg.toFixed(2)}%` : '–'} color={chg != null ? (chg >= 0 ? C.buy : C.sell) : undefined} />
+        <Stat id="top.mark" label="Mark" value={fmtPx(st?.mark, 1)} sub={st?.index != null ? `idx ${fmtPx(st.index, 0)}` : undefined} opt2 />
         <Stat
+          id="top.funding"
           label={`Funding · ${fl}`}
           value={st?.funding != null ? `${(st.funding * 100).toFixed(4)}%` : '–'}
           color={st?.funding != null ? (st.funding >= 0 ? C.buy : C.sell) : undefined}
         />
-        <Stat label="Open interest" value={st?.oi != null ? `${fmtQty(st.oi, 0)} BTC` : '–'} sub={fmtUsd(st?.oi_usd)} opt2 />
+        <Stat id="top.oi" label="Open interest" value={st?.oi != null ? `${fmtQty(st.oi, 0)} BTC` : '–'} sub={fmtUsd(st?.oi_usd)} opt2 />
         {f?.oi != null && (
-          <Stat label="OI all venues · 1h" value={`${fmtQty(f.oi / 1000, 1)}k`}
+          <Stat id="top.oiAll" label="OI all venues · 1h" value={`${fmtQty(f.oi / 1000, 1)}k`}
             sub={f.oi_d60 != null ? `${f.oi_d60 >= 0 ? '+' : ''}${fmtQty(f.oi_d60, 0)}` : undefined} />
         )}
-        <Stat label="CB premium" value={f?.premium != null ? `${f.premium >= 0 ? '+' : ''}$${f.premium.toFixed(1)}` : '–'}
+        <Stat id="top.prem" label="CB premium" value={f?.premium != null ? `${f.premium >= 0 ? '+' : ''}$${f.premium.toFixed(1)}` : '–'}
           color={f?.premium != null ? (f.premium >= 0 ? C.buy : C.sell) : undefined} />
-        <Stat label="24h volume" value={st?.vol24 != null ? `${fmtQty(st.vol24, 0)} BTC` : '–'} opt />
-        <Stat label="Spread" value={spread != null ? fmtPx(spread, 1) : '–'} opt />
+        <Stat id="top.vol" label="24h volume" value={st?.vol24 != null ? `${fmtQty(st.vol24, 0)} BTC` : '–'} opt />
+        <Stat id="top.spread" label="Spread" value={spread != null ? fmtPx(spread, 1) : '–'} opt />
       </div>
       {rg && rg.state !== 'neutral' && (
-        <div className={`rchip ${rgBias > 0 ? 'pos' : rgBias < 0 ? 'neg' : ''}`} title="Spot vs perp flow leadership over the last 5 minutes">
+        <div className={`rchip ${rgBias > 0 ? 'pos' : rgBias < 0 ? 'neg' : ''}`} {...tip('top.regime')}>
           {rg.label}
         </div>
       )}
-      <div className="integrity" title="Engine output graded against Binance's own 1-minute candles and independent order-book snapshots">
+      <div className="integrity" {...tip('top.integrity')}>
         <span className={`dot ${kOk === false ? 'bad' : kOk ? 'ok' : ''}`} />
         <span>
           Trades {tapeN ? `${tapeOk}/${tapeN} min exact` : 'checking…'}
@@ -93,7 +95,7 @@ export default function TopBar() {
         <span className="sep lat" />
         <span className="lat">{h?.lat_p50 != null ? `${Math.round(h.lat_p50)} ms` : '– ms'}</span>
       </div>
-      <div className={`conn ${store.conn}`}>
+      <div className={`conn ${store.conn}`} {...tip('top.conn')}>
         <span className="dot" />
         {store.conn === 'live' ? (store.demo ? 'Demo feed' : 'Live') : store.conn === 'frozen' ? 'Frozen'
           : store.conn === 'connecting' ? 'Connecting' : 'Offline'}
@@ -103,11 +105,11 @@ export default function TopBar() {
   )
 }
 
-function Stat({ label, value, sub, color, opt, opt2 }: {
-  label: string; value: string; sub?: string; color?: string; opt?: boolean; opt2?: boolean
+function Stat({ id, label, value, sub, color, opt, opt2 }: {
+  id: keyof typeof TIPS; label: string; value: string; sub?: string; color?: string; opt?: boolean; opt2?: boolean
 }) {
   return (
-    <div className={`stat ${opt ? 'opt' : ''} ${opt2 ? 'opt2' : ''}`}>
+    <div className={`stat ${opt ? 'opt' : ''} ${opt2 ? 'opt2' : ''}`} {...tip(id)}>
       <span className="k">{label}</span>
       <span className="v" style={color ? { color } : undefined}>
         {value}

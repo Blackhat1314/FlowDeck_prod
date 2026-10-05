@@ -172,6 +172,8 @@ class Accounts:
             cols = {r[1] for r in self.db.execute("PRAGMA table_info(users)")}
             if "plan" not in cols:
                 self.db.execute("ALTER TABLE users ADD COLUMN plan TEXT NOT NULL DEFAULT 'trial'")
+            if "tour_done_at" not in cols:   # when the user finished or skipped the first-visit tour
+                self.db.execute("ALTER TABLE users ADD COLUMN tour_done_at INTEGER")
             if "google_sub" not in cols:   # Google account id ("sub" claim) once the user has signed in with Google
                 self.db.execute("ALTER TABLE users ADD COLUMN google_sub TEXT")
             self.db.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_google_sub ON users(google_sub) WHERE google_sub IS NOT NULL")
@@ -581,6 +583,9 @@ class Accounts:
         failed24 = self.one("SELECT COUNT(*) c FROM audit WHERE action='login_failed' AND t>?", (t - DAY,))["c"]
         return {"total": len(users), **states, "signups_14d": days, "logins_24h": logins24, "failed_logins_24h": failed24,
                 "expiring_48h": [self.user_json(u, t) for u in expiring]}
+
+    def set_tour_done(self, uid: int, done: bool = True):
+        self.run("UPDATE users SET tour_done_at=? WHERE id=?", (now_ms() if done else None, uid))
 
     # ---------------------------------------------------------------------------------------- payments
     def create_payment(self, u, order_id: str, amount: int, currency: str, days: int, ip=None):

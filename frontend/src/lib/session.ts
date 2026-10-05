@@ -29,6 +29,8 @@ export interface MeUser {
   google?: boolean
   /** false for accounts made with Google that never set a password */
   has_password?: boolean
+  /** finished or skipped the first-visit tour */
+  tour_done?: boolean
 }
 
 export interface Me {

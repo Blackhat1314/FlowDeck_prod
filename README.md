@@ -51,7 +51,7 @@ then `npm run build` to update `backend/static`.
 
 ## Website, accounts and admin
 
-Flowdeck is now a small website with five pages:
+Flowdeck is a small website with these pages:
 
 | Page | Who sees it |
 |---|---|
@@ -60,6 +60,7 @@ Flowdeck is now a small website with five pages:
 | `/app` | The dashboard, for signed-in users. When the trial or plan ends, it shows a frozen snapshot instead of live data |
 | `/admin` | Admins only |
 | `/privacy`, `/terms` | Everyone. The privacy policy and terms, linked from Google's sign-in screen and the site footer. Contact details come from Settings |
+| `/guide` | Everyone. The Flowdeck Field Manual: every panel explained in depth, in English with a Hinglish switch. Linked from the account menu |
 
 **Your first admin login.** On the first start the server creates an admin and prints the login in the console.
 It also saves it to `backend/data/FIRST_ADMIN_LOGIN.txt`. Sign in, change the password from the account menu
@@ -77,8 +78,8 @@ The server only ever *creates* that account. It never promotes an existing accou
 - Data accuracy: the server's own grading against Binance (trades vs candles, order-book snapshots, latency)
   and the status, price, basis, open interest and funding of every exchange feed. The instrument switch is here
   too, because it changes the feed for every user.
-- Settings: trial length, the price shown to users, your WhatsApp number and email for payments,
-  payment instructions, and whether new sign-ups are open.
+- Settings: trial length, the price charged through Razorpay, the support email, payment instructions,
+  and whether new sign-ups are open.
 
 **How payment works (Razorpay).** The trial-ended banner and the account menu have a **Pay ₹499 for 30 days** button.
 It opens Razorpay's checkout (UPI, card, net banking). The server creates the order for the price set under Settings
@@ -138,6 +139,8 @@ To ship new code: push to `main`, then on the server `sudo bash /opt/flowdeck/sr
 | `FLOWDECK_ADMIN_EMAIL`, `FLOWDECK_ADMIN_PASSWORD` | Create this admin on start if no account uses the email |
 | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` | Razorpay API keys for the Pay button. Also read from `backend/.env` |
 | `FLOWDECK_GOOGLE_CLIENT_ID=...` | Google OAuth client ID for "Sign in with Google" (Flowdeck's own is built in). Empty value turns the button off |
+| `FLOWDECK_ARCHIVE_DAYS=0` | Days of 1-minute heatmap and footprint history to keep on disk. `0` (default) keeps it forever |
+| `FLOWDECK_FILL_DAYS=7` | Days of footprint to back-fill from Binance's free daily trade files. `0` turns the back-fill off |
 
 Tests: `pip install -r requirements-dev.txt`, then `python -m pytest -q` in `backend/`.
 
@@ -162,9 +165,34 @@ Tests: `pip install -r requirements-dev.txt`, then `python -m pytest -q` in `bac
 - **Side tabs**: Tape (all venues, filter by venue), Flow (who leads: spot or perps, premium, OI, funding, size buckets,
   liquidation model levels), Book (pull/stack ladder, walls, wall events and icebergs), Gamma, Signals (cascades, regime changes,
   absorption, liquidations), Accuracy.
+- **Hover help**: rest the pointer on any button, menu, panel or chart for 2 seconds and a short note says what it does.
+  Moving the mouse, clicking or scrolling hides it. Turn it off (or back on) under **Hover help** in the account menu.
+- **Tour**: the first time someone opens the dashboard, an 11-step tour highlights each part of the screen with
+  Back / Next, and **Skip tour** goes straight to the app (Esc and the arrow keys work too). It shows once per account;
+  **Take the tour** in the account menu runs it again. **Guide** in the same menu opens the full manual.
 
-Heatmap history starts when the server starts and is kept for 30 minutes; the server keeps
-recording while the browser tab is closed. On startup the server also loads the last 7 days of 1-minute
+### How much history you get
+
+| | Detail | How far back |
+|---|---|---|
+| Heatmap, live | every 250 ms column | about the last 30 minutes in the browser; older columns are merged into 5-second columns, not dropped |
+| Heatmap, recent | 5-second columns | the last 12 hours, kept in memory and on disk, so a restart doesn't lose them |
+| Heatmap, archive | 1-minute columns | from the day the server first started, kept on disk forever (or `FLOWDECK_ARCHIVE_DAYS`) |
+| Footprint | 1-minute bars with every price row | live bars are saved to disk once final; days the server missed are back-filled from Binance's daily trade files (`FLOWDECK_FILL_DAYS`, 7 by default) |
+
+Zoom out or drag the heatmap back in time and it loads older history by itself: 5-second columns for the last
+12 hours, then 1-minute columns. The time axis shows dates once you're past a day. On the footprint, scrolling back
+loads saved bars with full price rows in 6-hour blocks. A 1-minute heatmap column is an average of its 5-second
+columns (resting liquidity averaged, trades and liquidations summed, best bid/ask and last price from the end of the
+minute). History needs a live plan; expired accounts keep the frozen snapshot.
+
+Disk use, measured on the demo feed: about 4–7 MB a day for the 1-minute heatmap and about 3.5 MB a day for the
+footprint, so roughly 3–4 GB a year. The 5-second files are deleted after 2 days. Everything lives under
+`history/<instrument>/` next to the database (`/var/lib/flowdeck/history` on the server). The Binance back-fill runs
+every 6 hours in a separate low-priority process, checks each file's SHA-256, and never overwrites minutes the server
+recorded live (those also hold other exchanges' volume and liquidations).
+
+The server keeps recording while the browser tab is closed. On startup it also loads the last 7 days of 1-minute
 candles (for profiles, prior-session levels, VWAP and TPO), the most recent 60,000 individual trades (usually
 10–40 minutes of tick-exact footprint) and 500 five-minute open-interest steps for the liquidation model.
 Per-price detail is kept for 24 hours (6 hours for other venues); older bars keep their candle.
@@ -212,7 +240,9 @@ Deribit REST options summary                                                    
 
 - Binance snapshots stop at 1,000 levels per side (about ±$100–150 for BTCUSDT). Deeper levels appear as soon as
   they change, and the 30-second snapshot check fills in the rest of the snapshot range.
-- Heatmap (order-book) history cannot be backfilled, because no free source records it. It builds up from when the server starts.
+- Heatmap (order-book) history cannot be back-filled, because no free source records it. It builds up from the day
+  the server first starts, and any time the server is down stays empty. Footprint gaps are back-filled from Binance's
+  daily files the next day (Binance trades only; the other exchanges' volume isn't in those files).
 - Gamma assumes the usual dealer positioning (dealers long calls, short puts). It uses Deribit only, the largest
   BTC options venue, so other venues' options are not included.
 - Absorption is a heuristic signal, not ground truth. That is why each event shows its 60-second result
@@ -238,6 +268,9 @@ backend/app/engine/                     order book, flow, heatmap, absorption, g
 backend/app/runtime.py                  exchange connections, REST jobs, broadcast hub
 backend/app/main.py                     FastAPI app: pages, /api/auth, /api/admin, /ws stream
 backend/app/accounts.py                 users, sessions, trial rules, audit log, settings (SQLite)
+backend/app/engine/heattiers.py         merges live heatmap columns into 5-second and 1-minute history
+backend/app/archive.py                  history files on disk (heatmap tiers, footprint bars), one file per UTC day
+backend/app/histfill.py                 footprint back-fill from data.binance.vision (runs as its own process)
 backend/data/                           accounts database + first admin login (created on start; not in git)
 backend/app/sim.py, xsim.py             synthetic market and other venues (demo mode + tests)
 backend/tests/                          unit tests + mock exchange for offline integration tests

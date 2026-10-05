@@ -6,7 +6,7 @@ import {
 import type { Prefs, Tool } from '../lib/prefs'
 import { store } from '../lib/store'
 import type { Column } from '../lib/types'
-import { C, CLASSIC_LUT, fmtPx, fmtQty, fmtTime, HEAT_LUT, niceStep, venueColor } from '../lib/util'
+import { C, CLASSIC_LUT, fmtPx, fmtQty, fmtTime, HEAT_LUT, niceStep, timeTicks, venueColor } from '../lib/util'
 
 const SIDE_W = 74
 const DOM_W = 150
@@ -285,6 +285,12 @@ class HeatController {
       this.renderSide()
       this.renderCross()
     }
+    const first = store.cols[0]
+    if (first) {
+      const [ta] = this.visibleRange()
+      const span = (this.W + this.extra) * v.mpp
+      if (ta < first.t + span * 0.15) store.loadOlder(Math.min(48 * 3600_000, Math.max(2 * 3600_000, span * 3)))
+    }
     const tf = `translate3d(${-this.shift()}px,0,0)`
     this.layer.style.transform = tf
     this.blayer.style.transform = tf
@@ -372,7 +378,8 @@ class HeatController {
     for (let x = 0; x < W; x++) {
       const t = this.anchor + (x - (this.W - 1)) * mpp
       const a = store.colAt(t)
-      if (a < 0 || (a === cols.length - 1 && t - cols[a].t > 30000 && x < this.W)) {
+      if (a < 0 || (a === cols.length - 1 && t - cols[a].t > 30000 && x < this.W)
+        || (a < cols.length - 1 && t - cols[a].t > Math.max(2000, 3 * (cols[a].dt ?? cfg.column_ms)))) {
         for (let y = 0; y < H; y++) vals[y * W + x] = 0
         prevKey = -2
         continue
@@ -477,15 +484,27 @@ class HeatController {
     const bu = cfg.bucket
     const ax: Ax = { W, H: this.H, y: (q) => this.y(q), xt: (t) => this.x(t) }
 
+    // left of the oldest column we hold: older history is loading, or there is none
+    if (cols.length && t0 < cols[0].t) {
+      const xe = this.x(cols[0].t)
+      if (xe > 160) {
+        g.font = '500 12px "IBM Plex Sans", system-ui'
+        g.textAlign = 'center'
+        g.textBaseline = 'middle'
+        g.fillStyle = C.dim
+        g.fillText(store.histBusy ? 'Loading older history…' : store.histDone ? 'No older history recorded'
+          : 'Scroll on to load older history', xe / 2, this.H / 2)
+      }
+    }
+
     // dotted time grid (same steps as the time axis)
     if (s.heatGrid) {
-      const stepS = [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600].find((v) => (v * 1000) / mpp > 90) ?? 3600
       const [ta, tb] = this.visibleRange()
       g.strokeStyle = 'rgba(214,224,236,0.5)'
       g.lineWidth = 1
       g.setLineDash([2, 3])
       g.beginPath()
-      for (let t = Math.ceil(ta / (stepS * 1000)) * stepS * 1000; t < tb; t += stepS * 1000) {
+      for (const { t } of timeTicks(ta, tb, mpp)) {
         const xx = Math.round(this.x(t)) + 0.5
         g.moveTo(xx, 0)
         g.lineTo(xx, this.H)
@@ -523,21 +542,28 @@ class HeatController {
 
     // best bid / ask
     if (s.bidAsk) {
-      const stride = Math.max(1, Math.floor(mpp / cfg.column_ms / 1.5))
       const classic = s.heatPalette === 'classic'
       for (const [key, color] of [['bb', classic ? '#35e89a' : 'rgba(43,217,159,0.9)'], ['ba', classic ? '#ff4f4f' : 'rgba(255,92,122,0.9)']] as const) {
         g.beginPath()
         let prevY = 0
-        for (let i = i0; i <= i1; i += stride) {
+        let lastX = -1e9
+        let prevT = -1e15
+        let prevDt = cfg.column_ms
+        for (let i = i0; i <= i1; i++) {
           const c = cols[i]
           const xx = this.x(c.t)
+          if (xx - lastX < 1.5 && i !== i1) continue
           const yy = this.y(c[key])
-          if (i === i0) g.moveTo(xx, yy)
+          const gap = c.t - prevT > Math.max(2000, 3 * prevDt)
+          if (i === i0 || gap) g.moveTo(xx, yy)
           else {
             g.lineTo(xx, prevY)
             g.lineTo(xx, yy)
           }
           prevY = yy
+          lastX = xx
+          prevT = c.t
+          prevDt = c.dt ?? cfg.column_ms
         }
         g.lineTo(W, prevY)
         g.strokeStyle = color
@@ -1401,14 +1427,13 @@ class HeatController {
     // time axis
     g.fillStyle = C.panel
     g.fillRect(0, H, W, TIME_AXIS_H)
-    const stepS = [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600].find((v) => (v * 1000) / this.v.mpp > 90) ?? 3600
     g.font = '500 10.5px "IBM Plex Sans", system-ui'
     g.textAlign = 'center'
     g.textBaseline = 'middle'
-    for (let t = Math.ceil(t0 / (stepS * 1000)) * stepS * 1000; t < t1; t += stepS * 1000) {
+    for (const { t, label } of timeTicks(t0, t1, this.v.mpp)) {
       const xx = this.x(t)
       g.fillStyle = C.dim
-      g.fillText(fmtTime(t).slice(0, stepS >= 60 ? 5 : 8), xx, H + TIME_AXIS_H / 2)
+      g.fillText(label, xx, H + TIME_AXIS_H / 2)
       g.fillStyle = 'rgba(127,144,170,0.25)'
       g.fillRect(xx, H, 1, 4)
     }
@@ -1643,7 +1668,7 @@ class HeatController {
   zoomTime(f: number, x: number) {
     const v = this.v
     const old = v.mpp
-    const nw = Math.min(5000, Math.max(8, old * f))
+    const nw = Math.min(180_000, Math.max(8, old * f)) // up to 3 min per pixel: days of history on one screen
     if (!v.follow) {
       const tAtX = v.tRight + (x - (this.W - 1)) * old
       v.tRight = tAtX - (x - (this.W - 1)) * nw

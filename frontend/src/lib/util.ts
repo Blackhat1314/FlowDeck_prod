@@ -98,6 +98,26 @@ export function fmtTime(t: number, ms = false) {
   return ms ? `${s}.${String(d.getMilliseconds()).padStart(3, '0')}` : s
 }
 
+const TICK_STEPS_S = [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400, 172800, 604800]
+
+/** Time-axis ticks for a visible range at `mpp` ms per pixel: ~90 px apart, aligned to local clock time, with dates
+ *  where a day starts or when zoomed out to days. */
+export function timeTicks(t0: number, t1: number, mpp: number): { t: number; label: string; step: number }[] {
+  const stepS = TICK_STEPS_S.find((v) => (v * 1000) / mpp > 90) ?? 604800
+  const step = stepS * 1000
+  const off = -new Date(t0).getTimezoneOffset() * 60000 // local time = UTC + off
+  const out: { t: number; label: string; step: number }[] = []
+  for (let t = Math.ceil((t0 + off) / step) * step - off; t < t1; t += step) {
+    const d = new Date(t)
+    const midnight = d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0
+    const date = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+    const label = stepS >= 86400 || (midnight && stepS >= 60) ? date : fmtTime(t).slice(0, stepS >= 60 ? 5 : 8)
+    out.push({ t, label, step })
+    if (out.length > 400) break
+  }
+  return out
+}
+
 export function fmtSigned(v: number, d = 1) {
   return (v > 0 ? '+' : '') + v.toFixed(d)
 }

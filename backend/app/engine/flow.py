@@ -13,7 +13,7 @@ MIN = 60_000
 class Bar:
     __slots__ = ("t", "o", "h", "l", "c", "oid", "cid", "v", "bv", "sv", "n", "nraw", "rv", "rbv",
                  "f", "L", "lv", "dirty", "approx", "gaps", "dcur", "dmax", "dmin", "oi_d", "oi",
-                 "lq", "ll", "sl", "xl", "dsl", "dxl", "dll", "dmeta")
+                 "lq", "ll", "sl", "xl", "dsl", "dxl", "dll", "dmeta", "rs")
 
     def __init__(self, t: int):
         self.t = t
@@ -42,6 +42,28 @@ class Bar:
         self.dxl = set()
         self.dll = set()
         self.dmeta = False
+        self.rs = False     # restored from the archive after a restart
+
+    @classmethod
+    def from_json(cls, j: dict) -> "Bar":
+        """A bar saved by to_json('all') (archive) back into the engine."""
+        b = cls(int(j["t"]))
+        b.o, b.h, b.l, b.c = j.get("o"), j.get("h"), j.get("l"), j.get("c")
+        b.v, b.bv, b.sv, b.n = j.get("v", 0.0), j.get("bv", 0.0), j.get("sv", 0.0), j.get("n", 0)
+        dx = j.get("dx") or (0.0, 0.0)
+        b.dmax, b.dmin = dx[0], dx[1]
+        oi = j.get("oi") or (0.0, None)
+        b.oi_d, b.oi = oi[0], oi[1]
+        lq = j.get("lq") or (0.0, 0.0)
+        b.lq = [lq[0], lq[1]]
+        f = j.get("lv") or ()
+        b.lv = {int(f[i]): [f[i + 1], f[i + 2], int(f[i + 3]), int(f[i + 4])] for i in range(0, len(f), 5)}
+        for name in ("sl", "xl", "ll"):
+            f = j.get(name) or ()
+            setattr(b, name, {int(f[i]): [f[i + 1], f[i + 2]] for i in range(0, len(f), 3)})
+        b.approx = int(j.get("ax", 0))
+        b.rs = True
+        return b
 
     def to_json(self, levels: str = "all"):
         d = {"t": self.t, "o": self.o, "h": self.h, "l": self.l, "c": self.c,
@@ -161,6 +183,7 @@ class Flow:
         self.coverage_from = None      # bars with t >= this are fully covered by tick data
         self.vol_10s = 0.0             # rolling helpers for absorption
         self.cvd_live = 0.0
+        self.saved_upto = 0            # bars up to this minute are in the archive
 
     # ------------------------------------------------------------------ bars
     def _bar(self, t: int) -> Bar:
@@ -276,6 +299,34 @@ class Flow:
             self._emit_sweep(done, False)
         # re-sort tape by time after merging historic sweeps
         self.sweeps = deque(sorted(self.sweeps, key=lambda j: (j["t"], j["id"])), maxlen=self.sweeps.maxlen)
+
+    # ------------------------------------------------------------------ archive
+    def restore(self, bars: list):
+        """Bars from the archive after a restart (tick data only). Newer data always wins."""
+        for j in bars:
+            t = int(j["t"])
+            if t in self.bars or j.get("ax"):
+                continue
+            self.bars[t] = Bar.from_json(j)
+            self.saved_upto = max(self.saved_upto, t)
+        self.order = deque(sorted(self.bars))
+        while len(self.order) > self.s.bars_keep:
+            self.bars.pop(self.order.popleft(), None)
+
+    def completed_bars(self, now_ms: float) -> list:
+        """Finished bars built from tick data that aren't archived yet (a bar is final 2 minutes after it closes)."""
+        cut = now_ms - 2 * MIN
+        out = []
+        for t in self.order:
+            if t <= self.saved_upto:
+                continue
+            if t + MIN > cut:
+                break
+            b = self.bars[t]
+            if b.approx == 0 and b.n and (self.coverage_from is None or t >= self.coverage_from or b.rs):
+                out.append(b.to_json("all"))
+            self.saved_upto = t
+        return out
 
     # ------------------------------------------------------------------ klines (approx history)
     def apply_kline_rows(self, rows, before_t: int):

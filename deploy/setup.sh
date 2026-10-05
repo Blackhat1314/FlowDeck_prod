@@ -91,6 +91,10 @@ FLOW_VENUE=usdm
 # Razorpay keys for the Pay button (Dashboard > Account & Settings > API Keys), then restart:
 # RAZORPAY_KEY_ID=rzp_live_xxxxxxxxxxxxxx
 # RAZORPAY_KEY_SECRET=xxxxxxxxxxxxxxxxxxxxxxxx
+# History on disk ($DATA/history): days of 1-minute heatmap + footprint to keep (0 = forever),
+# and days of footprint to back-fill from Binance's daily trade files (0 = off)
+# FLOWDECK_ARCHIVE_DAYS=0
+# FLOWDECK_FILL_DAYS=7
 EOF
     ok "wrote $ENVF"
   else

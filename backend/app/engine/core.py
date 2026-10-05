@@ -12,6 +12,7 @@ from .absorption import AbsorptionDetector
 from .book import OrderBook
 from .flow import MIN, Flow
 from .heatmap import Heatmap, history_messages, pack_columns
+from .heattiers import HeatTiers
 from .integrity import Integrity
 from .liqmap import LiqMap
 from .micro import Micro
@@ -33,6 +34,7 @@ class Engine:
         self.book.chg = []
         self.flow = Flow(venue, self.s, bt, vid=self.pvid)
         self.heat = Heatmap(self.book, venue, self.s)
+        self.tiers = HeatTiers(self.s.hist_hours)          # 5 s heatmap history (and 1 min for the archive)
         self.absd = AbsorptionDetector(self.s, self.s.bucket_usd)
         self.integ = Integrity(self.flow, self.book, venue)
         self.micro = Micro(self.book, venue, self.s)
@@ -209,8 +211,9 @@ class Engine:
         self.flow.apply_kline_rows(rows, before_t)
 
     def backfill_trades(self, trades, start_minute: int):
-        # drop the partial-minute kline placeholders that tick data is about to replace
-        for t in [t for t, b in self.flow.bars.items() if b.approx == 1 and t >= start_minute]:
+        # drop kline placeholders, and bars restored from the archive, that tick data is about to rebuild
+        # (restored bars would otherwise count these trades twice)
+        for t in [t for t, b in self.flow.bars.items() if (b.approx == 1 or b.rs) and t >= start_minute]:
             self.flow.bars[t].__init__(t)
         for ev in trades:
             self.flow.on_trade(ev, float(ev["T"]), live=False)
@@ -265,6 +268,8 @@ class Engine:
             ext = self.xflow.column_ext(now_ms)
             ext["cb"] = self._combined_book()
             col = self.heat.sample(now_ms, last or 0.0, ext)
+            if col is not None:
+                self.tiers.add(col)
             self.next_col += self.s.column_ms
             if self.next_col < now_ms:
                 self.next_col = now_ms + self.s.column_ms
@@ -361,7 +366,7 @@ class Engine:
         return {"venue": v.key, "exchange": v.exchange, "symbol": v.symbol, "label": v.label,
                 "tick": v.tick, "inverse": v.inverse, "contract_usd": v.contract_usd,
                 "bucket": self.s.bucket_usd, "column_ms": self.s.column_ms, "half_range": self.s.half_range,
-                "history_min": self.s.history_min, "big_trade_btc": self.s.big_trade_btc,
+                "history_min": self.s.history_min, "hist_hours": self.s.hist_hours, "big_trade_btc": self.s.big_trade_btc,
                 "tape_min_btc": self.s.tape_min_btc, "primary_x": self.pvid,
                 "xvenues": [{"x": x.id, "key": x.key, "label": x.label, "name": x.name, "kind": x.kind}
                             for x in XVENUES.values()]}

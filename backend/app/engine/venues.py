@@ -94,7 +94,8 @@ class Settings:
     bucket_usd: float = 1.0          # heatmap / footprint base price bucket
     half_range: int = 800            # buckets each side of mid sent per heatmap column
     column_ms: int = 250             # heatmap time resolution
-    history_min: int = 30            # heatmap history kept server-side
+    history_min: int = 30            # heatmap history at full detail (250 ms columns)
+    hist_hours: float = 12.0         # heatmap history at 5 s detail (older: 1 min columns in the archive)
     bars_keep: int = 10080           # 1m bars kept (7 days; per-price detail for the last 24 h)
     tape_min_btc: float = 0.5        # sweeps at/above this go to the tape
     big_trade_btc: float = 5.0       # default "big trade" highlight

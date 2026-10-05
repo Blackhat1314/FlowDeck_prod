@@ -29,6 +29,7 @@ export interface Column {
   cvdP: number // cumulative all-perp delta
   cvdS: number // cumulative spot delta
   cvdZ: [number, number, number] // cumulative delta by taker-order size (<1, 1-10, >=10)
+  dt?: number // time this column covers (ms) when it isn't a live 250 ms column: 5000 or 60000 for older history
 }
 
 export interface Bar {
@@ -42,6 +43,7 @@ export interface Bar {
   sv: number
   n: number
   ax?: number // 1 = candle from exchange klines, 2 = older bar with per-price detail trimmed
+  hist?: boolean // per-price detail loaded from the server's archive (kept when old detail is trimmed)
   lv: Map<number, [number, number, number, number]> // bucket -> [buyBTC, sellBTC, buy trades, sell trades]
   sl: Map<number, [number, number]> // spot volume per bucket (basis-adjusted)
   xl: Map<number, [number, number]> // other perps' volume per bucket (basis-adjusted)
@@ -331,6 +333,7 @@ export interface Config {
   column_ms: number
   half_range: number
   history_min: number
+  hist_hours?: number // heatmap history kept at 5 s detail on the server
   big_trade_btc: number
   tape_min_btc: number
   primary_x: number

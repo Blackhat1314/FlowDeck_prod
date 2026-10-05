@@ -3,6 +3,7 @@ import type { Prefs } from '../lib/prefs'
 import { store, useTopic } from '../lib/store'
 import type { GexGroup } from '../lib/types'
 import { C, fmtAge, fmtPx, fmtQty, fmtTime, fmtUsd, venueColor } from '../lib/util'
+import { tip } from '../lib/hints'
 
 type Tab = 'tape' | 'flow' | 'book' | 'gamma' | 'signals' | 'health'
 type SetPref = <K extends keyof Prefs>(k: K, v: Prefs[K]) => void
@@ -10,7 +11,7 @@ type SetPref = <K extends keyof Prefs>(k: K, v: Prefs[K]) => void
 export default function SidePanel({ p, set }: { p: Prefs; set: SetPref }) {
   const [tab, setTab] = useState<Tab>('tape')
   return (
-    <aside className="side">
+    <aside className="side" {...tip('side.panel')}>
       <nav className="tabs" role="tablist">
         {(
           [
@@ -22,7 +23,7 @@ export default function SidePanel({ p, set }: { p: Prefs; set: SetPref }) {
             ['health', 'Accuracy'],
           ] as [Tab, string][]
         ).map(([k, l]) => (
-          <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
+          <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)} {...tip(`side.${k}`)}>
             {l}
           </button>
         ))}
