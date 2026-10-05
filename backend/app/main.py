@@ -24,9 +24,16 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
-from .accounts import DAY, AccountError, Accounts, RateLimiter
-from .accounts import now_ms as now_ms_int
-from .google_auth import GoogleTokenError, GoogleVerifier, valid_client_id
+from .envfile import load_env_file
+
+# settings such as the Razorpay keys can live in backend/.env (or .env at the project root); real environment
+# variables win. Loaded before anything below reads the environment.
+load_env_file(Path(__file__).resolve().parent.parent / ".env", Path(__file__).resolve().parent.parent.parent / ".env")
+
+from .accounts import DAY, AccountError, Accounts, RateLimiter  # noqa: E402
+from .accounts import now_ms as now_ms_int  # noqa: E402
+from .google_auth import GoogleTokenError, GoogleVerifier, valid_client_id  # noqa: E402
+from .payments import PLAN_DAYS, Razorpay, RazorpayError  # noqa: E402
 from .engine import VENUES
 from .engine.xchg import XVENUES
 from .runtime import Client, Runtime, now_ms
@@ -48,6 +55,9 @@ if GOOGLE_CLIENT_ID and not valid_client_id(GOOGLE_CLIENT_ID):
     logging.getLogger("flow").warning("FLOWDECK_GOOGLE_CLIENT_ID doesn't look like a Google client ID; Google sign-in is off")
     GOOGLE_CLIENT_ID = ""
 google = GoogleVerifier(GOOGLE_CLIENT_ID) if GOOGLE_CLIENT_ID else None
+# Razorpay Standard Checkout: RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET (environment or .env). Without them the
+# Pay button is hidden and users are pointed to the contact email.
+razorpay = Razorpay.from_env()
 
 # websocket close codes understood by the dashboard
 WS_CODES = {"no_session": 4401, "session_expired": 4401, "logout": 4401, "replaced": 4409, "blocked": 4403,
@@ -63,6 +73,8 @@ pw_change = RateLimiter(6, 15 * 60_000)      # wrong current-password attempts p
 frozen_snap = RateLimiter(4, 30 * 60_000)    # fresh snapshots per expired account (reloading is not a live feed)
 signup_ip = RateLimiter(8, 60 * 60_000)      # sign-ups per IP
 google_ip = RateLimiter(30, 15 * 60_000)     # Google sign-in attempts per IP
+pay_orders = RateLimiter(20, 60 * 60_000)    # checkout orders per account
+pay_verify = RateLimiter(30, 60 * 60_000)    # payment confirmations per account
 
 
 # ============================================================================================ presence
@@ -302,7 +314,9 @@ def me_json(u) -> dict:
 
 
 def public_cfg() -> dict:
-    return {**accounts.public_config(), "google_client_id": GOOGLE_CLIENT_ID or None}
+    return {**accounts.public_config(), "google_client_id": GOOGLE_CLIENT_ID or None,
+            "payments_enabled": razorpay.enabled, "payments_test": razorpay.enabled and razorpay.test_mode,
+            "plan_days": PLAN_DAYS}
 
 
 def kick_others(uid: int, keep_sid: int | None, problem: str):
@@ -459,6 +473,58 @@ async def google_signin(request: Request):
     return resp
 
 
+# ============================================================================================ payments (Razorpay)
+@app.post("/api/create-order")
+async def create_order(request: Request):
+    """Start a payment for one plan period. The price comes from the site settings, not from the browser."""
+    await body(request)
+    s, u = current(request)
+    if not razorpay.enabled:
+        err("payments_off", "Online payment isn't set up on this server yet.", 503)
+    if not pay_orders.hit(str(u["id"])):
+        err("rate_limited", "Too many payment attempts. Try again in an hour.", 429)
+    try:
+        amount = int(accounts.settings()["price_inr"]) * 100
+    except ValueError:
+        amount = 0
+    if amount < 100:
+        err("bad_amount", "The plan price isn't set. Ask the site owner to set it in the admin panel.", 400)
+    receipt = f"fd-{u['id']}-{now_ms_int()}"
+    try:
+        order = await razorpay.create_order(amount, "INR", receipt, {"user_id": str(u["id"]), "email": u["email"],
+                                                                     "days": str(PLAN_DAYS)})
+    except RazorpayError as e:
+        log.warning("razorpay create order failed: %s", e.message)
+        err(e.code, e.message, e.status)
+    accounts.create_payment(u, order["id"], int(order.get("amount", amount)), order.get("currency", "INR"), PLAN_DAYS,
+                            ip=client_ip(request))
+    return {"order_id": order["id"], "amount": order.get("amount", amount), "currency": order.get("currency", "INR"),
+            "key_id": razorpay.key_id, "name": "Flowdeck", "description": f"{PLAN_DAYS} days of live data",
+            "prefill": {"name": u["name"], "email": u["email"]}, "days": PLAN_DAYS}
+
+
+@app.post("/api/verify-payment")
+async def verify_payment(request: Request):
+    """Razorpay's checkout result. Marks the order paid only when the signature matches."""
+    d = await body(request)
+    s, u = current(request)
+    order_id, payment_id, signature = d.get("razorpay_order_id"), d.get("razorpay_payment_id"), d.get("razorpay_signature")
+    if not all(isinstance(x, str) and 0 < len(x) <= 200 for x in (order_id, payment_id, signature)):
+        err("missing_fields", "razorpay_order_id, razorpay_payment_id and razorpay_signature are required.", 400)
+    if not razorpay.enabled:
+        err("payments_off", "Online payment isn't set up on this server yet.", 503)
+    if not pay_verify.hit(str(u["id"])):
+        err("rate_limited", "Too many attempts. Try again in an hour.", 429)
+    if not razorpay.verify(order_id, payment_id, signature):
+        accounts.audit("payment_failed", u, u, f"signature mismatch, order {order_id[:40]}, payment {payment_id[:40]}",
+                       client_ip(request))
+        err("bad_signature", "We couldn't confirm this payment. If money left your account, contact us with the payment ID "
+                             f"{payment_id[:40]}.", 400)
+    nu, newly = await asyncio.to_thread(accounts.complete_payment, u, order_id, payment_id, ip=client_ip(request))
+    enforce(presence.of_user(u["id"]))   # open dashboards go live again
+    return {"ok": True, "newly_paid": newly, "payment_id": payment_id, **me_json(nu)}
+
+
 @app.post("/api/auth/logout")
 async def logout(request: Request):
     await body(request)
@@ -562,7 +628,7 @@ async def admin_user(request: Request, uid: int):
     sess = [dict(r) for r in accounts.q("SELECT id, created_at, last_seen_at, expires_at, ip, ua, revoked_at, revoke_reason "
                                         "FROM sessions WHERE user_id=? ORDER BY id DESC LIMIT 20", (uid,))]
     log_rows = [dict(r) for r in accounts.q("SELECT * FROM audit WHERE target_id=? OR actor_id=? ORDER BY id DESC LIMIT 50", (uid, uid))]
-    return {"user": accounts.user_json(u), "sessions": sess, "audit": log_rows,
+    return {"user": accounts.user_json(u), "sessions": sess, "audit": log_rows, "payments": accounts.payments_of(uid),
             "online": [r for r in presence.online() if r["user_id"] == uid]}
 
 

@@ -352,3 +352,4 @@ details.past summary { cursor: pointer; color: var(--fog); font-size: 14px; padd
   .venue-pick { min-width: 0; width: 100%; }
   .dialog { padding: 18px 16px 18px; }
 }
+.dev .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; overflow-wrap: anywhere; }

@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react'
-import { api, ApiError, type Me, waLink } from '../lib/session'
+import { api, ApiError, type Me, type PublicConfig } from '../lib/session'
 import { act, adminApi, toast } from './ui'
 
-type S = Record<'trial_days' | 'price_label' | 'price_inr' | 'contact_whatsapp' | 'contact_email' | 'signups_open' | 'upgrade_note', string>
+type S = Record<'trial_days' | 'price_label' | 'price_inr' | 'contact_email' | 'signups_open' | 'upgrade_note', string>
 
 export function Settings() {
   const [s, setS] = useState<S | null>(null)
   const [orig, setOrig] = useState<S | null>(null)
   const [busy, setBusy] = useState(false)
+  const [pub, setPub] = useState<PublicConfig | null>(null)
   useEffect(() => {
     adminApi<S>('/api/admin/settings').then((d) => { setS(d); setOrig(d) }).catch(() => toast('Could not load settings.', 'bad'))
+    api<PublicConfig>('/api/public/config').then(setPub).catch(() => {})
   }, [])
   if (!s || !orig) return <section className="view"><p className="dim">Loading…</p></section>
   const set = (k: keyof S) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setS({ ...s, [k]: e.target.value })
@@ -24,13 +26,12 @@ export function Settings() {
     setBusy(false)
   }
 
-  const sample = `Hi, I'd like to continue Flowdeck (${s.price_label}). My account: someone@example.com`
   return (
     <section className="view">
       <header className="view-head">
         <div>
           <h1>Settings</h1>
-          <p className="lede">What new users get and how they reach you to pay.</p>
+          <p className="lede">What new users get and how they pay.</p>
         </div>
       </header>
 
@@ -53,28 +54,27 @@ export function Settings() {
           </label>
           <label className="fld narrow">Price in rupees
             <input inputMode="numeric" value={s.price_inr} onChange={set('price_inr')} pattern="\d{0,6}" />
+            <small>What Razorpay charges for {pub?.plan_days ?? 30} days.</small>
           </label>
         </div>
 
         <h2 className="panel-title">How users pay you</h2>
-        <p className="panel-note">When a trial ends, users see buttons that open WhatsApp or email with their account email filled in. You take the payment, then extend them under Users.</p>
+        <p className="panel-note">
+          {pub == null ? 'Checking Razorpay…'
+            : pub.payments_enabled
+              ? <>Users pay with Razorpay (UPI, card, net banking) from the dashboard. A successful payment adds {pub.plan_days ?? 30} days to their account straight away, and shows up under Users and Activity.{pub.payments_test && <b> Razorpay is in test mode: no real money is taken. Put your live keys on the server to start charging.</b>}</>
+              : <>Razorpay isn't set up on this server: add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to its settings. Until then users see an email button.</>}
+        </p>
         <div className="row2">
-          <label className="fld">WhatsApp number
-            <input value={s.contact_whatsapp} onChange={set('contact_whatsapp')} placeholder="919876543210" inputMode="tel" />
-            <small>Country code first, digits only. Leave empty to hide the button.</small>
-          </label>
-          <label className="fld">Email
+          <label className="fld">Support email
             <input type="email" value={s.contact_email} onChange={set('contact_email')} placeholder="you@example.com" />
-            <small>Leave empty to hide the button.</small>
+            <small>For payment questions and the privacy page. Leave empty to hide it.</small>
           </label>
         </div>
-        <label className="fld">Payment instructions
+        <label className="fld">Note under the Pay button
           <textarea rows={3} value={s.upgrade_note} onChange={set('upgrade_note')} maxLength={600} />
-          <small>Shown under the trial-ended banner. Put your UPI ID here if you like.</small>
+          <small>Shown on the trial-ended banner.</small>
         </label>
-        {s.contact_whatsapp && (
-          <p className="hint">Test it: <a href={waLink(s.contact_whatsapp, sample)} target="_blank" rel="noopener noreferrer">open the WhatsApp message a user would send</a>.</p>
-        )}
 
         <div className="save-bar">
           <button className="b-primary" disabled={!dirty || busy}>{busy ? 'Saving…' : 'Save settings'}</button>

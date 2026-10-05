@@ -17,10 +17,15 @@ export const ACTIONS: Record<string, string> = {
   settings: 'Changed settings',
   feed_switch: 'Switched the instrument',
   bootstrap_skipped: 'Admin email from the server settings belongs to a regular account; not promoted',
+  google_link: 'Linked a Google account',
+  payment_order: 'Opened Razorpay checkout',
+  payment: 'Paid with Razorpay',
+  payment_failed: 'Payment could not be confirmed',
 }
 
 const TONE: Record<string, string> = {
   login_failed: 'bad', login_blocked: 'bad', user_delete: 'bad', force_logout: 'warn', extend: 'good', signup: 'good', user_create: 'good',
+  payment: 'good', payment_failed: 'bad',
 }
 
 const ms13 = /\b(1\d{12})\b/g

@@ -4,12 +4,16 @@ export interface PublicConfig {
   trial_days: number
   price_label: string
   price_inr: string
-  contact_whatsapp: string
   contact_email: string
   signups_open: boolean
   upgrade_note: string
   /** OAuth client ID for "Sign in with Google"; null when the server has it switched off */
   google_client_id?: string | null
+  /** Razorpay checkout is set up on the server (and whether it uses test keys) */
+  payments_enabled?: boolean
+  payments_test?: boolean
+  /** days of access one payment buys */
+  plan_days?: number
 }
 
 export interface MeUser {
@@ -101,10 +105,6 @@ export function timeLeft(ms: number) {
   if (d >= 1) return `${d}d ${h}h`
   if (h >= 1) return `${h}h ${m}m`
   return `${Math.max(1, m)}m`
-}
-
-export function waLink(num: string, text: string) {
-  return `https://wa.me/${num.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`
 }
 
 export function mailLink(to: string, subject: string, body: string) {

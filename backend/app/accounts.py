@@ -29,11 +29,14 @@ DEFAULT_SETTINGS = {
     "trial_days": "3",
     "price_label": "₹499 / month",
     "price_inr": "499",
-    "contact_whatsapp": "",
     "contact_email": "",
     "signups_open": "1",
-    "upgrade_note": "Pay ₹499 for 30 days. Send your registered email after paying and your access is extended within a few hours.",
+    "upgrade_note": "Pay with UPI, card or net banking through Razorpay. Your 30 days start as soon as the payment goes through.",
 }
+# notes shipped by earlier versions: replaced by the current default unless the admin had changed them
+OLD_UPGRADE_NOTES = (
+    "Pay ₹499 for 30 days. Send your registered email after paying and your access is extended within a few hours.",
+)
 
 
 def now_ms() -> int:
@@ -150,6 +153,20 @@ class Accounts:
                 );
                 CREATE INDEX IF NOT EXISTS audit_t ON audit(t);
                 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS payments (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                  email TEXT NOT NULL,
+                  order_id TEXT NOT NULL UNIQUE,
+                  payment_id TEXT UNIQUE,
+                  amount INTEGER NOT NULL,
+                  currency TEXT NOT NULL,
+                  days INTEGER NOT NULL,
+                  status TEXT NOT NULL DEFAULT 'created',
+                  created_at INTEGER NOT NULL,
+                  paid_at INTEGER
+                );
+                CREATE INDEX IF NOT EXISTS payments_user ON payments(user_id);
                 """
             )
             cols = {r[1] for r in self.db.execute("PRAGMA table_info(users)")}
@@ -160,6 +177,10 @@ class Accounts:
             self.db.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_google_sub ON users(google_sub) WHERE google_sub IS NOT NULL")
             for k, v in DEFAULT_SETTINGS.items():
                 self.db.execute("INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)", (k, v))
+            # payments go through Razorpay now: the WhatsApp payment number is no longer kept
+            self.db.execute("DELETE FROM settings WHERE key='contact_whatsapp'")
+            for old in OLD_UPGRADE_NOTES:
+                self.db.execute("UPDATE settings SET value=? WHERE key='upgrade_note' AND value=?", (DEFAULT_SETTINGS["upgrade_note"], old))
 
     # ---------------------------------------------------------------------------------------- helpers
     def q(self, sql, args=()):
@@ -198,12 +219,8 @@ class Accounts:
                 raise AccountError("bad_setting", "Price must be a whole number of rupees.")
             if k == "signups_open":
                 v = "1" if v in ("1", "true", "True", "on") else "0"
-            if k == "contact_whatsapp" and v and not re.fullmatch(r"\+?\d{8,15}", v.replace(" ", "")):
-                raise AccountError("bad_setting", "WhatsApp number: digits with country code, e.g. 919876543210.")
             if k == "contact_email" and v:
                 v = clean_email(v)
-            if k == "contact_whatsapp":
-                v = v.replace(" ", "").lstrip("+")
             v = v[:600]
             if cur.get(k) != v:
                 self.run("INSERT INTO settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (k, v))
@@ -215,7 +232,7 @@ class Accounts:
     def public_config(self) -> dict:
         s = self.settings()
         return {"trial_days": int(s["trial_days"]), "price_label": s["price_label"], "price_inr": s["price_inr"],
-                "contact_whatsapp": s["contact_whatsapp"], "contact_email": s["contact_email"],
+                "contact_email": s["contact_email"],
                 "signups_open": s["signups_open"] == "1", "upgrade_note": s["upgrade_note"]}
 
     # ---------------------------------------------------------------------------------------- users
@@ -564,6 +581,36 @@ class Accounts:
         failed24 = self.one("SELECT COUNT(*) c FROM audit WHERE action='login_failed' AND t>?", (t - DAY,))["c"]
         return {"total": len(users), **states, "signups_14d": days, "logins_24h": logins24, "failed_logins_24h": failed24,
                 "expiring_48h": [self.user_json(u, t) for u in expiring]}
+
+    # ---------------------------------------------------------------------------------------- payments
+    def create_payment(self, u, order_id: str, amount: int, currency: str, days: int, ip=None):
+        self.run("INSERT INTO payments(user_id, email, order_id, amount, currency, days, status, created_at) VALUES (?,?,?,?,?,?,?,?)",
+                 (u["id"], u["email"], order_id, amount, currency, days, "created", now_ms()))
+        self.audit("payment_order", u, u, f"order {order_id}, {amount / 100:.2f} {currency}", ip)
+
+    def payment(self, order_id: str):
+        return self.one("SELECT * FROM payments WHERE order_id=?", (order_id,))
+
+    def payments_of(self, uid: int, limit: int = 50):
+        return [dict(r) for r in self.q("SELECT * FROM payments WHERE user_id=? ORDER BY id DESC LIMIT ?", (uid, limit))]
+
+    def complete_payment(self, u, order_id: str, payment_id: str, ip=None):
+        """Mark a verified order paid and extend the account by the order's days, exactly once.
+        Returns (user, newly_paid). Call only after the Razorpay signature has been checked."""
+        with self.lock:
+            p = self.payment(order_id)
+            if p is None or p["user_id"] != u["id"]:
+                raise AccountError("unknown_order", "This payment doesn't belong to your account.", 400)
+            if p["status"] == "paid":
+                if p["payment_id"] == payment_id:   # the same confirmation sent twice: already counted
+                    return self.user(u["id"]), False
+                raise AccountError("order_paid", "This order has already been paid.", 400)
+            self.run("UPDATE payments SET status='paid', payment_id=?, paid_at=? WHERE order_id=? AND status='created'",
+                     (payment_id, now_ms(), order_id))
+            nu = self.extend(u["id"], days=p["days"], actor=u, ip=ip)
+            self.audit("payment", u, nu, f"paid {p['amount'] / 100:.2f} {p['currency']}, +{p['days']} days, "
+                                         f"order {order_id}, payment {payment_id}", ip)
+            return nu, True
 
     def ensure_admin(self, email: str | None, password: str | None):
         """Make sure an admin exists. Returns (email, generated password or None).

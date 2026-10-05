@@ -6,6 +6,7 @@ backend/data/
 FIRST_ADMIN_LOGIN.txt
 .env
 .env.*
+!.env.example
 
 # environments and caches
 backend/.venv/
@@ -27,3 +28,4 @@ tools/film/seq/
 .DS_Store
 Thumbs.db
 desktop.ini
+frontend/node_modules

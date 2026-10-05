@@ -206,8 +206,8 @@ def test_admin_flow(srv):
         assert ad.delete(f"/api/admin/users/{pid}", headers=J).status_code == 200
         assert u.get("/api/auth/me").status_code == 401
         # settings, accuracy, audit, csv
-        s = ad.put("/api/admin/settings", json={"trial_days": "5", "contact_whatsapp": "91 98765 43210"}, headers=J).json()
-        assert s["trial_days"] == "5" and s["contact_whatsapp"] == "919876543210"
+        s = ad.put("/api/admin/settings", json={"trial_days": "5", "contact_email": "Help@Example.com"}, headers=J).json()
+        assert s["trial_days"] == "5" and s["contact_email"] == "help@example.com" and "contact_whatsapp" not in s
         assert ad.get("/api/public/config").json()["trial_days"] == 5
         acc = ad.get("/api/admin/accuracy").json()
         assert "health" in acc and "venues" in acc

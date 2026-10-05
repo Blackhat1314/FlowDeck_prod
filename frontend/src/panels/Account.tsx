@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { api, ApiError, loginUrl, logout, mailLink, REASONS, timeLeft, waLink } from '../lib/session'
+import { api, ApiError, loginUrl, logout, mailLink, REASONS, timeLeft } from '../lib/session'
+import { paymentInProgress, payWithRazorpay } from '../lib/razorpay'
 import { store, useTopic } from '../lib/store'
 
 function useTick(ms: number) {
@@ -17,22 +18,63 @@ function upgradeText() {
   return `Hi, I'd like to continue Flowdeck (${me?.config.price_label ?? ''}). My account: ${me?.user.email ?? ''}`
 }
 
+/** A short confirmation at the top of the screen that outlives the component that shows it. */
+function flash(text: string) {
+  const el = document.createElement('div')
+  el.className = 'pay-toast'
+  el.setAttribute('role', 'status')
+  el.textContent = text
+  document.body.appendChild(el)
+  setTimeout(() => el.remove(), 7000)
+}
+
+/** Pay for the next period with Razorpay (UPI, card, net banking). Falls back to the contact email when the server
+ *  has no Razorpay keys. */
 export function UpgradeButtons({ compact = false }: { compact?: boolean }) {
+  useTopic('conn')
   const cfg = store.me?.config
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<{ ok: boolean; t: string } | null>(null)
   if (!cfg) return null
+  const price = cfg.price_inr ? `₹${cfg.price_inr}` : cfg.price_label
+
+  const pay = async () => {
+    setBusy(true)
+    setMsg(null)
+    try {
+      const r = await payWithRazorpay()
+      if (r.status === 'paid') {
+        store.me = r.me
+        store.bump('conn')
+        const until = r.me.user.expires_at ? new Date(r.me.user.expires_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : ''
+        const t = `Payment received. Live data is on${until ? ` until ${until}` : ''}.`
+        setMsg({ ok: true, t })
+        flash(t)   // the trial banner closes as the data goes live, so confirm it outside the banner too
+      } else {
+        setMsg({ ok: false, t: r.error ? `${r.error} You haven't been charged.` : "Payment cancelled. You haven't been charged." })
+      }
+    } catch (err) {
+      setMsg({ ok: false, t: err instanceof ApiError ? err.message : 'Could not reach the server. Check your connection and try again.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="up-btns">
-      {cfg.contact_whatsapp && (
-        <a className="up-btn wa" href={waLink(cfg.contact_whatsapp, upgradeText())} target="_blank" rel="noopener noreferrer">
-          {compact ? 'WhatsApp' : 'Upgrade on WhatsApp'}
-        </a>
-      )}
-      {cfg.contact_email && (
+      {cfg.payments_enabled ? (
+        <button className="up-btn pay" onClick={pay} disabled={busy}>
+          {busy ? 'Opening payment…' : compact ? `Pay ${price} · ${cfg.plan_days ?? 30} days` : `Pay ${price} for ${cfg.plan_days ?? 30} days`}
+        </button>
+      ) : cfg.contact_email ? (
         <a className="up-btn" href={mailLink(cfg.contact_email, 'Flowdeck upgrade', upgradeText())}>
-          {compact ? 'Email' : 'Upgrade by email'}
+          {compact ? 'Email us to upgrade' : 'Upgrade by email'}
         </a>
+      ) : (
+        <span className="up-none">Contact the admin to continue.</span>
       )}
-      {!cfg.contact_whatsapp && !cfg.contact_email && <span className="up-none">Contact the admin to continue.</span>}
+      {cfg.payments_enabled && cfg.payments_test && <span className="up-test">Test mode: no real money is taken.</span>}
+      {msg && <span className={msg.ok ? 'up-ok' : 'up-bad'} role="status">{msg.t}</span>}
     </div>
   )
 }
@@ -47,9 +89,10 @@ export function AccountMenu() {
   useEffect(() => {
     if (!open) return
     const h = (e: MouseEvent) => {
+      if (paymentInProgress()) return   // clicks in Razorpay's window
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
-    const k = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    const k = (e: KeyboardEvent) => e.key === 'Escape' && !paymentInProgress() && setOpen(false)
     document.addEventListener('mousedown', h)
     document.addEventListener('keydown', k)
     return () => {

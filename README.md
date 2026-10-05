@@ -80,9 +80,16 @@ The server only ever *creates* that account. It never promotes an existing accou
 - Settings: trial length, the price shown to users, your WhatsApp number and email for payments,
   payment instructions, and whether new sign-ups are open.
 
-**How payment works.** When a trial ends, the dashboard shows WhatsApp and email buttons, with the user's account
-email already filled in. Fill in your number or email under Settings, or the buttons stay hidden. When someone pays,
-open Users, click Extend and choose +30 days. Their open dashboard goes live again within seconds.
+**How payment works (Razorpay).** The trial-ended banner and the account menu have a **Pay ₹499 for 30 days** button.
+It opens Razorpay's checkout (UPI, card, net banking). The server creates the order for the price set under Settings
+(the browser can't change the amount), and when Razorpay reports the payment the server checks its signature
+(HMAC-SHA256 of `order_id|payment_id` with the key secret). Only a matching signature marks the order paid and adds
+30 days, once per order, on top of any time left. The open dashboard goes live within seconds. Payments show under
+Users (each user's Payments) and Activity. You can still extend anyone by hand under Users.
+- Keys: `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET` in `backend/.env` locally (copy `backend/.env.example`) or in
+  `/etc/flowdeck/flowdeck.env` on the server. Without them the Pay button is replaced by the support email.
+- Test keys (`rzp_test_...`) take no real money; the button says so. Swap in live keys (`rzp_live_...`) to charge.
+- Endpoints: `POST /api/create-order` and `POST /api/verify-payment` (signed-in users only, same-origin, rate-limited).
 
 **Account rules**
 - One device at a time: signing in signs out every other device, and opening the dashboard in a second tab stops the first.
@@ -129,6 +136,7 @@ To ship new code: push to `main`, then on the server `sudo bash /opt/flowdeck/sr
 | `FLOWDECK_SECURE_COOKIE=1` | Always mark the session cookie Secure (set this whenever the site is served over HTTPS) |
 | `FLOWDECK_DB=/path/flowdeck.db` | Keep the accounts database somewhere else |
 | `FLOWDECK_ADMIN_EMAIL`, `FLOWDECK_ADMIN_PASSWORD` | Create this admin on start if no account uses the email |
+| `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` | Razorpay API keys for the Pay button. Also read from `backend/.env` |
 | `FLOWDECK_GOOGLE_CLIENT_ID=...` | Google OAuth client ID for "Sign in with Google" (Flowdeck's own is built in). Empty value turns the button off |
 
 Tests: `pip install -r requirements-dev.txt`, then `python -m pytest -q` in `backend/`.

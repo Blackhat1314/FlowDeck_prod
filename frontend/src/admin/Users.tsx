@@ -244,6 +244,7 @@ interface Detail {
   user: AdminUser
   sessions: { id: number; created_at: number; last_seen_at: number; expires_at: number; ip: string; ua: string; revoked_at: number | null; revoke_reason: string | null }[]
   audit: AuditRow[]
+  payments?: { id: number; order_id: string; payment_id: string | null; amount: number; currency: string; days: number; status: string; created_at: number; paid_at: number | null }[]
   online: { session_id: number; live: boolean; since: number; ip: string; ua: string }[]
 }
 
@@ -352,6 +353,21 @@ function UserDrawer({ u, me, onClose, reload, onPassword }: { u: AdminUser; me: 
             )
           })()}
         </section>
+
+        {d?.payments && d.payments.some((p) => p.status === 'paid') && (
+          <section className="dr-sec">
+            <h3>Payments</h3>
+            {d.payments.filter((p) => p.status === 'paid').map((p) => (
+              <div className="dev" key={p.id}>
+                <div>
+                  <b>₹{(p.amount / 100).toLocaleString('en-IN')} · {p.days} days</b>
+                  <span className="dim">{fmtDate(p.paid_at ?? p.created_at, true)} via Razorpay</span>
+                  <span className="dim mono">{p.payment_id}</span>
+                </div>
+              </div>
+            ))}
+          </section>
+        )}
 
         <section className="dr-sec">
           <h3>Profile</h3>

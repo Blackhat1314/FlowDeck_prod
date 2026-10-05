@@ -1,7 +1,7 @@
 import { createRoot } from 'react-dom/client'
 import { useEffect, useState } from 'react'
 import './page.css'
-import { api, mailLink, type PublicConfig, waLink } from '../lib/session'
+import { api, mailLink, type PublicConfig } from '../lib/session'
 
 // /privacy and /terms. The contact line and trial/price come from the site settings in the admin panel.
 const UPDATED = '5 October 2026'
@@ -9,15 +9,8 @@ type Doc = 'privacy' | 'terms'
 
 function Contact({ cfg }: { cfg: PublicConfig | null }) {
   const mail = cfg?.contact_email
-  const wa = cfg?.contact_whatsapp
-  if (!mail && !wa) return <>through the contact details on the Flowdeck home page</>
-  return (
-    <>
-      {mail && <>by email at <a href={mailLink(mail, 'Flowdeck account', '')}>{mail}</a></>}
-      {mail && wa && ' or '}
-      {wa && <>on <a href={waLink(wa, 'Hi, about my Flowdeck account')} target="_blank" rel="noopener noreferrer">WhatsApp</a></>}
-    </>
-  )
+  if (!mail) return <>through the contact details on the Flowdeck home page</>
+  return <>by email at <a href={mailLink(mail, 'Flowdeck account', '')}>{mail}</a></>
 }
 
 function Privacy({ cfg }: { cfg: PublicConfig | null }) {
@@ -32,7 +25,7 @@ function Privacy({ cfg }: { cfg: PublicConfig | null }) {
         <li><b>Your account:</b> your name and email address. If you use a password, we store only a scrambled form of it (a scrypt hash), never the password itself.</li>
         <li><b>If you sign in with Google:</b> Google shares your name, email address and Google account ID with us. We don't receive your Google password and can't see your Gmail, Drive, contacts or anything else in your Google account.</li>
         <li><b>Sign-ins and security:</b> your IP address, browser type, and the times you sign in and use the dashboard. We also keep a log of account events, such as sign-ins, failed sign-in attempts and plan changes.</li>
-        <li><b>Payments:</b> Flowdeck doesn't take card or bank details. When you pay us, we note the payment against your account so we can extend your access.</li>
+        <li><b>Payments:</b> payments are handled by <a href="https://razorpay.com/privacy/" target="_blank" rel="noopener noreferrer">Razorpay</a>. Your card, UPI or bank details go to Razorpay, never to us. We keep the payment's order and payment IDs, the amount and the date with your account, so we can extend your access and answer questions about it.</li>
         <li><b>Your chart settings</b> are saved in your own browser and aren't sent to us.</li>
       </ul>
 
@@ -47,7 +40,7 @@ function Privacy({ cfg }: { cfg: PublicConfig | null }) {
       </ul>
 
       <h2>Who else sees it</h2>
-      <p>No one we sell or rent it to. Your data is stored on servers we rent from Google Cloud in Mumbai, India. We'll share data with authorities only when the law requires it.</p>
+      <p>No one we sell or rent it to. Your data is stored on servers we rent from Google Cloud in Mumbai, India. When you pay, Razorpay processes the payment and sees your name, email and payment details. We'll share data with authorities only when the law requires it.</p>
 
       <h2>How long we keep it</h2>
       <p>We keep your account details while your account exists. When you ask us to delete your account, we remove your profile and sign-in sessions. Entries in the security log that mention your email may be kept to protect the service.</p>
@@ -96,7 +89,7 @@ function Terms({ cfg }: { cfg: PublicConfig | null }) {
       <h2>Free trial and payment</h2>
       <ul>
         <li>New accounts get a free trial of {days} {days === 1 ? 'day' : 'days'} with full access. No card is needed.</li>
-        <li>After the trial, live data needs a paid plan{cfg?.price_label ? <> ({cfg.price_label})</> : null}. Paid access runs for the period stated when you pay, and we extend your account once the payment is confirmed.</li>
+        <li>After the trial, live data needs a paid plan{cfg?.price_label ? <> ({cfg.price_label})</> : null}. You pay from the dashboard through Razorpay (UPI, card or net banking). Each payment adds {cfg?.plan_days ?? 30} days of access, starting as soon as the payment goes through, or on top of any time you have left.</li>
         <li>When access ends, the dashboard shows a frozen snapshot until you renew.</li>
         <li>For questions about a payment or a refund, contact us <Contact cfg={cfg} />.</li>
       </ul>

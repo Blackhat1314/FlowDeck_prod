@@ -3,7 +3,7 @@
 // the live heatmap behind the closing call to action. The hero's entrance,
 // menu and background loop are small inline scripts in index.html.
 import './page.css'
-import { waLink, mailLink, type Me, type PublicConfig } from '../lib/session'
+import { mailLink, type Me, type PublicConfig } from '../lib/session'
 import film720 from './media/flowdeck-film-720.mp4?url'
 import film1080 from './media/flowdeck-film-1080.mp4?url'
 import { mountShowcase } from './showcase'
@@ -22,9 +22,7 @@ fetch('/api/public/config', { credentials: 'same-origin' })
       const k = el.dataset.cfg as keyof PublicConfig
       if (c[k] != null && c[k] !== '') el.textContent = String(c[k])
     }
-    const wa = $<HTMLAnchorElement>('#foot-wa')
     const mail = $<HTMLAnchorElement>('#foot-mail')
-    if (wa && c.contact_whatsapp) { wa.href = waLink(c.contact_whatsapp, 'Hi, I have a question about Flowdeck.'); wa.hidden = false }
     if (mail && c.contact_email) { mail.href = mailLink(c.contact_email, 'Flowdeck', ''); mail.hidden = false }
   })
   .catch(() => {})
