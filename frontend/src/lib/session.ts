@@ -16,6 +16,8 @@ export interface PublicConfig {
   plan_days?: number
   /** the server can send email (password reset links, sign-in alerts) */
   email_enabled?: boolean
+  /** new email sign-ups confirm their address with an emailed code (only matters when email_enabled) */
+  verify_signups?: boolean
 }
 
 export interface MeUser {

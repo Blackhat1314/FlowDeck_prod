@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, ApiError, type Me, type PublicConfig } from '../lib/session'
 import { act, adminApi, toast } from './ui'
 
-type S = Record<'trial_days' | 'price_label' | 'price_inr' | 'contact_email' | 'signups_open' | 'upgrade_note', string>
+type S = Record<'trial_days' | 'price_label' | 'price_inr' | 'contact_email' | 'signups_open' | 'verify_signups' | 'upgrade_note', string>
 
 export function Settings() {
   const [s, setS] = useState<S | null>(null)
@@ -40,6 +40,15 @@ export function Settings() {
         <label className="check big">
           <input type="checkbox" checked={s.signups_open === '1'} onChange={(e) => setS({ ...s, signups_open: e.target.checked ? '1' : '0' })} />
           <span>Anyone can create an account<small>Turn off to stop new sign-ups. You can still add users yourself.</small></span>
+        </label>
+        <label className="check big">
+          <input type="checkbox" checked={s.verify_signups !== '0'} onChange={(e) => setS({ ...s, verify_signups: e.target.checked ? '1' : '0' })} />
+          <span>New sign-ups confirm their email with a code
+            <small>
+              We email a 6-digit code; the account and its trial start only once it's typed in, so fake addresses can't get a trial.
+              Google sign-ups are already confirmed by Google.{pub && !pub.email_enabled && <b> Email isn't set up yet (see Email below), so sign-ups skip the code for now.</b>}
+            </small>
+          </span>
         </label>
         <label className="fld narrow">Free trial length, in days
           <input type="number" min={0} max={90} value={s.trial_days} onChange={set('trial_days')} required />

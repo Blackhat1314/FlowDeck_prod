@@ -58,6 +58,8 @@ body { background: #000; font-family: var(--body); -webkit-font-smoothing: antia
 .label-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 .linklike.quiet { font-weight: 500; font-size: 13px; color: var(--fog); text-decoration-color: rgba(255, 255, 255, 0.25); }
 .linklike.quiet:hover { color: #fff; }
+.auth input.otp { height: 60px; font: 600 30px/1 ui-monospace, 'SF Mono', Menlo, Consolas, monospace; letter-spacing: 0.45em;
+  text-align: center; padding: 0 0 0 0.45em; }
 .auth-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-top: 4px; }
 .btn-ghost { background: transparent; color: var(--paper); border: 1px solid rgba(255, 255, 255, 0.22); box-shadow: none; }
 .btn-ghost:hover:not([disabled]) { border-color: rgba(255, 255, 255, 0.5); }

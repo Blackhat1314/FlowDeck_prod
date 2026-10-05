@@ -332,6 +332,23 @@ def signin_email(m: Mailer, name: str, via: str, ip: str, ua: str, t_ms: int, fo
     return subject, text, body_html
 
 
+def code_email(m: Mailer, name: str, code: str, minutes: int):
+    subject = f"{code} is your Flowdeck code"
+    text = (f"Hi {name},\n\nYour Flowdeck code is {code}\n\nType it on the sign-up page to confirm your email and start "
+            f"your free trial. It expires in {minutes} minutes.\n\n"
+            "If you didn't try to create a Flowdeck account, ignore this email. Nothing is created without this code.\n\n- Flowdeck\n")
+    digits = "".join(f'<span style="display:inline-block;width:38px;margin:0 3px;padding:10px 0;border:1px solid #d1d5db;'
+                     f'border-radius:10px;text-align:center;font:700 26px/1 ui-monospace,Menlo,Consolas,monospace;color:#111827">{d}</span>'
+                     for d in code)
+    body_html = _page("Confirm your email",
+                      f"<p style='margin:0'>Hi {html.escape(name)},</p><p style='margin:12px 0 0'>Type this code on the sign-up "
+                      f"page to confirm your email and start your free trial. It expires in {minutes} minutes.</p>"
+                      f"<p style='margin:22px 0 4px'>{digits}</p>",
+                      None, [], "If you didn't try to create a Flowdeck account, ignore this email. Nothing is created "
+                                "without this code.")
+    return subject, text, body_html
+
+
 def test_email(m: Mailer, t_ms: int):
     subject = "Flowdeck test email"
     text = f"Email from your Flowdeck server works.\n\nSent {m.when(t_ms)} through {m.host}:{m.port}.\n"

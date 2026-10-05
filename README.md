@@ -93,7 +93,12 @@ Users (each user's Payments) and Activity. You can still extend anyone by hand u
 - Test keys (`rzp_test_...`) take no real money; the button says so. Swap in live keys (`rzp_live_...`) to charge.
 - Endpoints: `POST /api/create-order` and `POST /api/verify-payment` (signed-in users only, same-origin, rate-limited).
 
-**Emails (password reset and sign-in alerts).** With an SMTP provider set up, Flowdeck sends:
+**Emails (sign-up codes, password reset, sign-in alerts).** With an SMTP provider set up, Flowdeck sends:
+- **Sign-up codes.** A new email sign-up gets a 6-digit code; the account, and its trial, are created only once the code
+  is typed on the sign-up page (10 minutes, 5 wrong tries, a new code at most every 30 s and 5 a day per address).
+  The code is tied to the browser that chose the password, so someone who starts a sign-up with another person's
+  address can't have that person confirm the stranger's password. Google sign-ups skip it (Google already confirmed
+  the address). Admins can switch it off under Settings > Sign-ups and trial; without email it's skipped.
 - **Password reset links.** "Forgot password?" on the sign-in page emails a link that works once and expires in 30 minutes
   (asking again cancels the older link). Saving the new password signs out every device and signs this browser in.
   The page answers the same whether or not the address has an account, and each address gets at most 3 emails an hour.

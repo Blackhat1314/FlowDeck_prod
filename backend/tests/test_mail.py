@@ -176,7 +176,9 @@ def srv(smtp):
     old = main.mailer
     with TestClient(main.app, base_url="http://testserver") as c:
         main.mailer = mailer_for(smtp)
+        main.accounts.set_settings({"verify_signups": "0"})   # the sign-up code tests switch it on themselves
         yield c
+        main.accounts.set_settings({"verify_signups": "1"})
     main.mailer = old
 
 
@@ -320,3 +322,106 @@ def test_forgot_without_email_setup(srv):
         assert fresh().get("/api/public/config").json()["email_enabled"] is False
     finally:
         main.mailer = old
+
+
+# ------------------------------------------------------------------------------------------ sign-up codes
+def code_from(smtp, to, n):
+    msgs = [m for m in smtp.wait(n, to=to) if m["msg"]["Subject"].endswith("is your Flowdeck code")]
+    assert len(msgs) >= n, f"expected {n} codes for {to}"
+    return re.match(r"^(\d{6}) is your Flowdeck code", msgs[n - 1]["msg"]["Subject"]).group(1)
+
+
+@pytest.fixture()
+def verify_on(srv):
+    main.accounts.set_settings({"verify_signups": "1"})
+    main.signup_ip.hits.clear()
+    main.code_ip.hits.clear()
+    yield
+    main.accounts.set_settings({"verify_signups": "0"})
+
+
+def test_signup_needs_the_emailed_code(srv, smtp, verify_on):
+    assert srv.get("/api/public/config").json()["verify_signups"] is True
+    c = fresh()
+    r = c.post("/api/auth/signup", json={"name": "Neha", "email": "Neha@Example.com", "password": "password-n1"}, headers=J).json()
+    assert r["verify"] and r["email"] == "neha@example.com" and r["minutes"] == 10 and len(r["ticket"]) > 20
+    assert main.accounts.user_by_email("neha@example.com") is None and c.get("/api/auth/me").status_code == 401
+    code = code_from(smtp, "neha@example.com", 1)
+    msg = smtp.wait(1, to="neha@example.com")[0]["msg"]
+    assert code in body_text(msg) and "Neha" in body_text(msg)
+    wrong = f"{(int(code) + 1) % 1_000_000:06d}"
+    bad = c.post("/api/auth/signup/verify", json={"email": "neha@example.com", "code": wrong, "ticket": r["ticket"]}, headers=J).json()
+    assert bad["error"] == "bad_code" and "4 tries left" in bad["message"]
+    # the right code from a browser that didn't start this sign-up is refused
+    assert fresh().post("/api/auth/signup/verify", json={"email": "neha@example.com", "code": code, "ticket": "x" * 32},
+                        headers=J).json()["error"] == "no_pending"
+    ok = c.post("/api/auth/signup/verify", json={"email": "neha@example.com", "code": f"{code[:3]} {code[3:]}", "ticket": r["ticket"]}, headers=J)
+    assert ok.status_code == 200 and ok.json()["user"]["state"] == "trial" and ok.json()["live"]
+    assert c.get("/api/auth/me").json()["user"]["email"] == "neha@example.com"
+    assert fresh().post("/api/auth/login", json={"email": "neha@example.com", "password": "password-n1"}, headers=J).status_code == 200
+    again = c.post("/api/auth/signup/verify", json={"email": "neha@example.com", "code": code, "ticket": r["ticket"]}, headers=J).json()
+    assert again["error"] == "email_taken"
+
+
+def test_stranger_cannot_pre_set_the_password(srv, smtp, verify_on):
+    owner, stranger = fresh(), fresh(UA_B)
+    r1 = owner.post("/api/auth/signup", json={"name": "Om", "email": "om@example.com", "password": "owner-pass-1"}, headers=J).json()
+    # someone else starts a sign-up for the same address with their own password (after the 30 s pause)
+    assert stranger.post("/api/auth/signup", json={"name": "X", "email": "om@example.com", "password": "stranger-1"},
+                         headers=J).json()["error"] == "too_soon"
+    main.accounts.run("UPDATE pending_signups SET last_sent_at=last_sent_at-60000 WHERE email='om@example.com'")
+    r2 = stranger.post("/api/auth/signup", json={"name": "X", "email": "om@example.com", "password": "stranger-1"}, headers=J).json()
+    assert r2["verify"]
+    latest = code_from(smtp, "om@example.com", 2)   # the code goes to the owner's inbox, not the stranger
+    # the owner types the newest code in their own browser: refused, because it's tied to the stranger's attempt
+    res = owner.post("/api/auth/signup/verify", json={"email": "om@example.com", "code": latest, "ticket": r1["ticket"]}, headers=J).json()
+    assert res["error"] == "no_pending" and main.accounts.user_by_email("om@example.com") is None
+    # the owner starts again, which cancels the stranger's attempt, and confirms with their own password
+    main.accounts.run("UPDATE pending_signups SET last_sent_at=last_sent_at-60000 WHERE email='om@example.com'")
+    r3 = owner.post("/api/auth/signup", json={"name": "Om", "email": "om@example.com", "password": "owner-pass-1"}, headers=J).json()
+    code = code_from(smtp, "om@example.com", 3)
+    assert stranger.post("/api/auth/signup/verify", json={"email": "om@example.com", "code": code, "ticket": r2["ticket"]},
+                         headers=J).json()["error"] == "no_pending"
+    assert owner.post("/api/auth/signup/verify", json={"email": "om@example.com", "code": code, "ticket": r3["ticket"]}, headers=J).status_code == 200
+    assert fresh().post("/api/auth/login", json={"email": "om@example.com", "password": "owner-pass-1"}, headers=J).status_code == 200
+
+
+def test_code_limits(srv, smtp, verify_on):
+    c = fresh()
+    r = c.post("/api/auth/signup", json={"name": "Lim", "email": "lim@example.com", "password": "password-l1"}, headers=J).json()
+    t = r["ticket"]
+    code = code_from(smtp, "lim@example.com", 1)
+    wrong = f"{(int(code) + 7) % 1_000_000:06d}"
+    for _ in range(4):
+        c.post("/api/auth/signup/verify", json={"email": "lim@example.com", "code": wrong, "ticket": t}, headers=J)
+    assert c.post("/api/auth/signup/verify", json={"email": "lim@example.com", "code": wrong, "ticket": t}, headers=J).json()["error"] == "code_locked"
+    assert c.post("/api/auth/signup/verify", json={"email": "lim@example.com", "code": code, "ticket": t}, headers=J).json()["error"] == "code_locked"
+    # a new code unlocks it; asking again within 30 s is refused
+    assert c.post("/api/auth/signup/resend", json={"email": "lim@example.com", "ticket": t}, headers=J).json()["error"] == "too_soon"
+    main.accounts.run("UPDATE pending_signups SET last_sent_at=last_sent_at-60000 WHERE email='lim@example.com'")
+    assert c.post("/api/auth/signup/resend", json={"email": "lim@example.com", "ticket": t}, headers=J).status_code == 200
+    code2 = code_from(smtp, "lim@example.com", 2)
+    assert c.post("/api/auth/signup/verify", json={"email": "lim@example.com", "code": code, "ticket": t}, headers=J).json()["error"] in ("bad_code",) or code == code2
+    main.accounts.run("UPDATE pending_signups SET expires_at=1 WHERE email='lim@example.com'")
+    assert c.post("/api/auth/signup/verify", json={"email": "lim@example.com", "code": code2, "ticket": t}, headers=J).json()["error"] == "code_expired"
+    # five codes per address a day
+    for _ in range(3):
+        main.accounts.run("UPDATE pending_signups SET last_sent_at=last_sent_at-60000 WHERE email='lim@example.com'")
+        assert c.post("/api/auth/signup/resend", json={"email": "lim@example.com", "ticket": t}, headers=J).status_code == 200
+    main.accounts.run("UPDATE pending_signups SET last_sent_at=last_sent_at-60000 WHERE email='lim@example.com'")
+    assert c.post("/api/auth/signup/resend", json={"email": "lim@example.com", "ticket": t}, headers=J).json()["error"] == "too_many_codes"
+
+
+def test_signup_code_send_failure_and_switch(srv, smtp, verify_on):
+    main.mailer.password = "wrong"
+    try:
+        r = fresh().post("/api/auth/signup", json={"name": "F", "email": "fail@example.com", "password": "password-f1"}, headers=J)
+        assert r.status_code == 502 and r.json()["error"] == "mail_failed"
+    finally:
+        main.mailer.password = "re_test_key"
+    assert main.accounts.user_by_email("fail@example.com") is None
+    # switched off by the admin: straight in, no code
+    main.accounts.set_settings({"verify_signups": "0"})
+    c = fresh()
+    r = c.post("/api/auth/signup", json={"name": "Q", "email": "quick@example.com", "password": "password-q1"}, headers=J)
+    assert r.status_code == 200 and "verify" not in r.json() and r.json()["user"]["email"] == "quick@example.com"

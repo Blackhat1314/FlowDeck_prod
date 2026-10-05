@@ -192,6 +192,112 @@ function Forgot({ cfg, initialEmail, onBack }: { cfg: PublicConfig | null; initi
   )
 }
 
+interface Pending { email: string; ticket: string; minutes: number }
+function loadPending(): Pending | null {
+  try {
+    const p = JSON.parse(sessionStorage.getItem('fd-signup') || 'null')
+    return p && typeof p.email === 'string' && typeof p.ticket === 'string' ? p : null
+  } catch {
+    return null
+  }
+}
+function savePending(p: Pending | null) {
+  try {
+    if (p) sessionStorage.setItem('fd-signup', JSON.stringify(p))
+    else sessionStorage.removeItem('fd-signup')
+  } catch {
+    /* private mode: the code step still works until a reload */
+  }
+}
+
+/** Sign-up, step 2: the 6-digit code we emailed. The account and its trial start once it's confirmed. */
+function ConfirmCode({ pending, onBack }: { pending: Pending; onBack: () => void }) {
+  const [code, setCode] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [note, setNote] = useState<string | null>(null)
+  const [again, setAgain] = useState(45)
+  const [restart, setRestart] = useState(false)
+  const box = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (again <= 0) return
+    const id = setTimeout(() => setAgain(again - 1), 1000)
+    return () => clearTimeout(id)
+  }, [again])
+
+  const confirm = async (value = code) => {
+    if (busy || value.length !== 6) return
+    setBusy(true)
+    setError(null)
+    try {
+      await api('/api/auth/signup/verify', { body: { email: pending.email, code: value, ticket: pending.ticket } })
+      savePending(null)
+      location.href = '/app'
+      return
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message)
+        if (err.code === 'no_pending' || err.code === 'email_taken') setRestart(true)
+        if (err.code === 'bad_code' || err.code === 'code_locked' || err.code === 'code_expired') setCode('')
+      } else setError(offline)
+    }
+    setBusy(false)
+    box.current?.focus()
+  }
+
+  const resend = async () => {
+    setError(null)
+    setNote(null)
+    try {
+      await api('/api/auth/signup/resend', { body: { email: pending.email, ticket: pending.ticket } })
+      setNote('A new code is on its way. The old one no longer works.')
+      setAgain(45)
+      setCode('')
+      box.current?.focus()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : offline)
+      if (err instanceof ApiError && err.code === 'no_pending') setRestart(true)
+    }
+  }
+
+  return (
+    <>
+      <h1>Check your email</h1>
+      <p className="auth-sub">We sent a 6-digit code to <b>{pending.email}</b>. Type it here to confirm your email and start your free trial.</p>
+      <form onSubmit={(e) => { e.preventDefault(); confirm() }}>
+        <label>Code
+          <input ref={box} className="otp" value={code} autoFocus inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}"
+            maxLength={6} aria-describedby="otp-help" readOnly={busy}
+            onChange={(e) => {
+              const v = e.target.value.replace(/\D/g, '').slice(0, 6)
+              setCode(v)
+              if (v.length === 6) confirm(v)
+            }}
+            onPaste={(e) => {
+              const v = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6)
+              if (v.length === 6) { e.preventDefault(); setCode(v); confirm(v) }
+            }} />
+          <small id="otp-help">It expires in {pending.minutes} minutes. Nothing there? Check your spam folder.</small>
+        </label>
+        {error && <p className="auth-error" role="alert">{error}</p>}
+        {note && !error && <p className="auth-note" role="status">{note}</p>}
+        {restart ? (
+          <button type="button" className="btn btn-signal wide" onClick={onBack}>Fill in the form again</button>
+        ) : (
+          <button className="btn btn-signal wide" disabled={busy || code.length !== 6}>{busy ? 'Confirming…' : 'Confirm and start my trial'}</button>
+        )}
+      </form>
+      <div className="auth-actions">
+        <button type="button" className="btn btn-ghost" disabled={again > 0 || restart} onClick={resend}>
+          {again > 0 ? `Send a new code (${again}s)` : 'Send a new code'}
+        </button>
+        <button type="button" className="linklike" onClick={onBack}>Use a different email</button>
+      </div>
+    </>
+  )
+}
+
 /** The page a reset link opens: check the link, then choose the new password (which signs this browser in). */
 function Reset({ onForgot }: { onForgot: () => void }) {
   const [state, setState] = useState<'checking' | 'ok' | 'bad'>(resetToken ? 'checking' : 'bad')
@@ -275,6 +381,7 @@ function Auth() {
   const [show, setShow] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [pending, setPending] = useState<Pending | null>(() => (modeFromPath() === 'signup' ? loadPending() : null))
   const reason = new URLSearchParams(location.search).get('reason')
 
   useEffect(() => {
@@ -320,8 +427,16 @@ function Auth() {
     setBusy(true)
     setError(null)
     try {
-      if (mode === 'signup') await api('/api/auth/signup', { body: { name, email, password: pw } })
-      else await api('/api/auth/login', { body: { email, password: pw } })
+      if (mode === 'signup') {
+        const r = await api<{ verify?: boolean; email: string; ticket: string; minutes: number }>('/api/auth/signup', { body: { name, email, password: pw } })
+        if (r.verify) {   // email set up: confirm the address with the code first
+          const p = { email: r.email, ticket: r.ticket, minutes: r.minutes }
+          savePending(p)
+          setPending(p)
+          setBusy(false)
+          return
+        }
+      } else await api('/api/auth/login', { body: { email, password: pw } })
       location.href = mode === 'signup' ? '/app' : safeNext()
     } catch (err) {
       if (err instanceof ApiError && err.code === 'bad_login' && googleId) {
@@ -360,6 +475,8 @@ function Auth() {
               <p>To sign in with a password as well, choose <b>Set a password</b> in the dashboard's account menu.</p>
               <a className="btn btn-signal" href={safeNext()}>Open the dashboard</a>
             </div>
+          ) : mode === 'signup' && pending ? (
+            <ConfirmCode pending={pending} onBack={() => { savePending(null); setPending(null); setError(null) }} />
           ) : mode === 'forgot' ? (
             <Forgot cfg={cfg} initialEmail={email} onBack={() => switchMode('signin')} />
           ) : mode === 'reset' ? (

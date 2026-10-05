@@ -31,11 +31,11 @@ from .envfile import load_env_file
 # variables win. Loaded before anything below reads the environment.
 load_env_file(Path(__file__).resolve().parent.parent / ".env", Path(__file__).resolve().parent.parent.parent / ".env")
 
-from .accounts import DAY, RESET_MINUTES, AccountError, Accounts, RateLimiter, clean_email  # noqa: E402
+from .accounts import CODE_MINUTES, DAY, RESET_MINUTES, AccountError, Accounts, RateLimiter, clean_email  # noqa: E402
 from .accounts import now_ms as now_ms_int  # noqa: E402
 from .accounts import token_hash  # noqa: E402
 from .google_auth import GoogleTokenError, GoogleVerifier, valid_client_id  # noqa: E402
-from .mailer import MailError, Mailer, changed_email, mask_email, reset_email, signin_email, test_email  # noqa: E402
+from .mailer import MailError, Mailer, changed_email, code_email, mask_email, reset_email, signin_email, test_email  # noqa: E402
 from .payments import PLAN_DAYS, Razorpay, RazorpayError  # noqa: E402
 from .engine import VENUES
 from .engine.xchg import XVENUES
@@ -86,6 +86,7 @@ hist_reqs = RateLimiter(240, 10 * 60_000)    # history requests per account (scr
 forgot_ip = RateLimiter(10, 60 * 60_000)     # password-reset requests per IP
 forgot_email = RateLimiter(3, 60 * 60_000)   # reset emails per address (more are silently skipped)
 reset_ip = RateLimiter(30, 15 * 60_000)      # reset-link checks and submissions per IP
+code_ip = RateLimiter(40, 15 * 60_000)       # sign-up code checks per IP (each code also allows only 5 tries)
 
 
 # ============================================================================================ presence
@@ -456,15 +457,69 @@ async def venues():
     return [{"key": v.key, "label": v.label, "exchange": v.exchange, "symbol": v.symbol} for v in VENUES.values()]
 
 
+def verify_signups() -> bool:
+    """New email sign-ups confirm their address with a code: on unless the admin switched it off, and only when the
+    server can send email."""
+    return mailer.enabled and accounts.settings().get("verify_signups", "1") == "1"
+
+
+async def send_code(email: str, name: str, code: str):
+    """Send a sign-up code now, so a wrong or dead address is reported on the page instead of silently."""
+    if not mailer.budget_ok("code"):
+        err("mail_busy", "We can't send email right now. Try again later, or sign up with Google.", 503)
+    subject, text, html_ = code_email(mailer, name, code, CODE_MINUTES)
+    try:
+        await asyncio.to_thread(mailer.send, mailer.build(email, subject, text, html_, reply_to()))
+    except MailError as e:
+        mailer.last_error = str(e)
+        log.warning("mail: sign-up code to %s failed: %s", mask_email(email), e)
+        err("mail_failed", "We couldn't send a code to that address. Check it and try again, or sign up with Google.", 502)
+
+
 @app.post("/api/auth/signup")
 async def signup(request: Request):
+    """Email sign-up. With email set up, this only emails a 6-digit code (see /api/auth/signup/verify); without it, the
+    account is created straight away."""
     d = await body(request)
     ip = client_ip(request)
     if accounts.settings()["signups_open"] != "1":
         err("signups_closed", "New sign-ups are paused. Contact us for access.", 403)
     if not signup_ip.hit(ip):
         err("rate_limited", "Too many sign-ups from your network. Try again later.", 429)
+    if verify_signups():
+        code, ticket = await asyncio.to_thread(accounts.start_signup, d.get("email"), d.get("name"), d.get("password"), ip)
+        email = clean_email(d.get("email"))
+        await send_code(email, accounts.one("SELECT name FROM pending_signups WHERE email=?", (email,))["name"], code)
+        return {"ok": True, "verify": True, "email": email, "ticket": ticket, "minutes": CODE_MINUTES}
     u = await asyncio.to_thread(accounts.create_user, d.get("email"), d.get("name"), d.get("password"), ip=ip)
+    return signed_in(request, u, ip)
+
+
+@app.post("/api/auth/signup/resend")
+async def signup_resend(request: Request):
+    d = await body(request)
+    if not code_ip.hit(client_ip(request)):
+        err("rate_limited", "Too many attempts. Wait 15 minutes and try again.", 429)
+    code, name = await asyncio.to_thread(accounts.resend_signup, d.get("email"), d.get("ticket"))
+    await send_code(clean_email(d.get("email")), name, code)
+    return {"ok": True, "minutes": CODE_MINUTES}
+
+
+@app.post("/api/auth/signup/verify")
+async def signup_verify(request: Request):
+    """The code from the email: creates the account, starts the trial and signs this browser in."""
+    d = await body(request)
+    ip = client_ip(request)
+    if not code_ip.hit(ip):
+        err("rate_limited", "Too many attempts. Wait 15 minutes and try again.", 429)
+    if accounts.settings()["signups_open"] != "1":
+        err("signups_closed", "New sign-ups are paused. Contact us for access.", 403)
+    u = await asyncio.to_thread(accounts.confirm_signup, d.get("email"), d.get("code"), d.get("ticket"), ip)
+    return signed_in(request, u, ip)
+
+
+def signed_in(request: Request, u, ip: str):
+    """Open the first session of a new account and set its cookies."""
     dev_raw, dev = device_of(request)
     token, u, _, sid = accounts.open_session(u, ip, request.headers.get("user-agent"), device=dev)
     resp = JSONResponse({"ok": True, **me_json(u)})

@@ -25,6 +25,9 @@ MAX_TS = 4_102_444_800_000   # 1 Jan 2100
 EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,190}\.[^@\s]{2,24}$")
 SESSION_DAYS = 30
 RESET_MINUTES = 30   # how long a password-reset link works
+CODE_MINUTES = 10    # how long a sign-up code works
+CODE_TRIES = 5       # wrong guesses allowed per code
+CODE_SENDS = 5       # codes per pending sign-up (then start again later)
 
 DEFAULT_SETTINGS = {
     "trial_days": "3",
@@ -32,6 +35,7 @@ DEFAULT_SETTINGS = {
     "price_inr": "499",
     "contact_email": "",
     "signups_open": "1",
+    "verify_signups": "1",   # new email sign-ups confirm their address with a 6-digit code (when email is set up)
     "upgrade_note": "Pay with UPI, card or net banking through Razorpay. Your 30 days start as soon as the payment goes through.",
 }
 # notes shipped by earlier versions: replaced by the current default unless the admin had changed them
@@ -179,6 +183,19 @@ class Accounts:
                   ip TEXT
                 );
                 CREATE INDEX IF NOT EXISTS password_resets_user ON password_resets(user_id);
+                CREATE TABLE IF NOT EXISTS pending_signups (
+                  email TEXT PRIMARY KEY,
+                  name TEXT NOT NULL,
+                  pw_hash TEXT NOT NULL,
+                  code_hash TEXT NOT NULL,
+                  ticket_hash TEXT NOT NULL,
+                  created_at INTEGER NOT NULL,
+                  expires_at INTEGER NOT NULL,
+                  tries INTEGER NOT NULL DEFAULT 0,
+                  sends INTEGER NOT NULL DEFAULT 1,
+                  last_sent_at INTEGER NOT NULL,
+                  ip TEXT
+                );
                 """
             )
             scols = {r[1] for r in self.db.execute("PRAGMA table_info(sessions)")}
@@ -234,7 +251,7 @@ class Accounts:
                     raise AccountError("bad_setting", "Trial days must be 0–90.")
             if k == "price_inr" and v and not re.fullmatch(r"\d{1,6}", v):
                 raise AccountError("bad_setting", "Price must be a whole number of rupees.")
-            if k == "signups_open":
+            if k in ("signups_open", "verify_signups"):
                 v = "1" if v in ("1", "true", "True", "on") else "0"
             if k == "contact_email" and v:
                 v = clean_email(v)
@@ -250,7 +267,8 @@ class Accounts:
         s = self.settings()
         return {"trial_days": int(s["trial_days"]), "price_label": s["price_label"], "price_inr": s["price_inr"],
                 "contact_email": s["contact_email"],
-                "signups_open": s["signups_open"] == "1", "upgrade_note": s["upgrade_note"]}
+                "signups_open": s["signups_open"] == "1", "upgrade_note": s["upgrade_note"],
+                "verify_signups": s.get("verify_signups", "1") == "1"}
 
     # ---------------------------------------------------------------------------------------- users
     def user(self, uid: int):
@@ -271,11 +289,14 @@ class Accounts:
         return u["expires_at"] > (t or now_ms())
 
     def create_user(self, email, name, password, role="user", expires_at=None, created_by="signup", actor=None, ip=None,
-                    plan: str | None = None, google_sub: str | None = None):
-        """password=None only for Google sign-ups: the account has no password until the user sets one."""
+                    plan: str | None = None, google_sub: str | None = None, pw_hash: str | None = None):
+        """password=None only for Google sign-ups: the account has no password until the user sets one.
+        pw_hash: the password already hashed (a sign-up confirmed with an emailed code)."""
         email = clean_email(email)
         name = clean_name(name)
-        if password is None and google_sub:
+        if pw_hash:
+            pass
+        elif password is None and google_sub:
             pw_hash = ""
         else:
             check_password_rules(password)
@@ -669,6 +690,90 @@ class Accounts:
             self.audit("password_reset_email", u, u, f"signed out {len(revoked)} session(s)", ip)
             token_s, u2, _, sid = self.open_session(u, ip, ua, via="password reset", device=device)
         return token_s, u2, revoked, sid
+
+    # ---------------------------------------------------------------------------------------- sign-up codes
+    @staticmethod
+    def _code_hash(email: str, code: str, salt: str) -> str:
+        return hashlib.sha256(f"{salt}|{email}|{code}".encode()).hexdigest()
+
+    def _new_code(self) -> tuple[str, str]:
+        return f"{secrets.randbelow(1_000_000):06d}", secrets.token_hex(8)
+
+    def start_signup(self, email, name, password, ip: str | None) -> tuple[str, str]:
+        """Hold a sign-up until its owner types the code we email. Returns (code to send, ticket for the browser).
+        The account, and its trial, only exist once the code is confirmed. The ticket ties the code to the browser
+        that chose the password: if someone else starts a sign-up for the same address, theirs replaces the pending
+        one and the earlier browser's ticket stops working, so a stranger's password can never be confirmed by the
+        address owner typing a code. Starting again replaces the pending one (new code, new ticket)."""
+        email = clean_email(email)
+        name = clean_name(name)
+        check_password_rules(password)
+        if self.user_by_email(email):
+            raise AccountError("email_taken", "An account with this email already exists.", 409)
+        t = now_ms()
+        self.run("DELETE FROM pending_signups WHERE created_at<=?", (t - DAY,))   # the per-address code count lasts a day
+        p = self.one("SELECT * FROM pending_signups WHERE email=?", (email,))
+        if p and t - p["last_sent_at"] < 30_000:
+            raise AccountError("too_soon", "We just sent a code to this address. Wait a few seconds before asking for another.", 429)
+        if p and p["sends"] >= CODE_SENDS:
+            raise AccountError("too_many_codes", "Too many codes for this address. Try again in a day, or sign up with Google.", 429)
+        pw = hash_password(password)
+        code, salt = self._new_code()
+        ticket = secrets.token_urlsafe(24)
+        with self.lock:
+            self.db.execute("""INSERT INTO pending_signups(email, name, pw_hash, code_hash, ticket_hash, created_at, expires_at,
+                                 tries, sends, last_sent_at, ip)
+                               VALUES (?,?,?,?,?,?,?,0,1,?,?)
+                               ON CONFLICT(email) DO UPDATE SET name=excluded.name, pw_hash=excluded.pw_hash,
+                                 code_hash=excluded.code_hash, ticket_hash=excluded.ticket_hash, expires_at=excluded.expires_at,
+                                 tries=0, sends=pending_signups.sends + 1, last_sent_at=excluded.last_sent_at, ip=excluded.ip""",
+                            (email, name, pw, f"{salt}${self._code_hash(email, code, salt)}", token_hash(ticket), t,
+                             t + CODE_MINUTES * 60_000, t, ip))
+        return code, ticket
+
+    def _pending_for(self, email: str, ticket) -> "sqlite3.Row":
+        p = self.one("SELECT * FROM pending_signups WHERE email=?", (email,))
+        if p is None or not isinstance(ticket, str) or not hmac.compare_digest(token_hash(ticket), p["ticket_hash"]):
+            if p is None and self.user_by_email(email):
+                raise AccountError("email_taken", "This account is already confirmed. Sign in instead.", 409)
+            raise AccountError("no_pending", "This sign-up was started again somewhere else, or has ended. "
+                                             "Fill in the form again to get a new code.", 400)
+        return p
+
+    def resend_signup(self, email, ticket) -> tuple[str, str]:
+        """A fresh code for a pending sign-up, for the browser that started it. Returns (code, name)."""
+        email = clean_email(email)
+        t = now_ms()
+        p = self._pending_for(email, ticket)
+        if t - p["last_sent_at"] < 30_000:
+            raise AccountError("too_soon", "We just sent a code. Wait a few seconds before asking for another.", 429)
+        if p["sends"] >= CODE_SENDS:
+            raise AccountError("too_many_codes", "Too many codes for this address. Try again in a day, or sign up with Google.", 429)
+        code, salt = self._new_code()
+        self.run("UPDATE pending_signups SET code_hash=?, expires_at=?, tries=0, sends=sends+1, last_sent_at=? WHERE email=?",
+                 (f"{salt}${self._code_hash(email, code, salt)}", t + CODE_MINUTES * 60_000, t, email))
+        return code, p["name"]
+
+    def confirm_signup(self, email, code, ticket, ip: str | None):
+        """Check the emailed code and create the account (its trial starts now). Returns the new user."""
+        email = clean_email(email)
+        code = re.sub(r"\D", "", code if isinstance(code, str) else "")
+        t = now_ms()
+        with self.lock:
+            p = self._pending_for(email, ticket)
+            if p["expires_at"] <= t:
+                raise AccountError("code_expired", "This code has expired. Ask for a new one.", 400)
+            if p["tries"] >= CODE_TRIES:
+                raise AccountError("code_locked", "Too many wrong codes. Ask for a new one.", 400)
+            salt, want = p["code_hash"].split("$", 1)
+            if len(code) != 6 or not hmac.compare_digest(self._code_hash(email, code, salt), want):
+                self.run("UPDATE pending_signups SET tries=tries+1 WHERE email=?", (email,))
+                left = CODE_TRIES - p["tries"] - 1
+                if left <= 0:
+                    raise AccountError("code_locked", "Too many wrong codes. Ask for a new one.", 400)
+                raise AccountError("bad_code", f"That code isn't right. {left} {'try' if left == 1 else 'tries'} left.", 400)
+            self.run("DELETE FROM pending_signups WHERE email=?", (email,))
+        return self.create_user(email, p["name"], None, ip=ip, pw_hash=p["pw_hash"])
 
     # ---------------------------------------------------------------------------------------- payments
     def create_payment(self, u, order_id: str, amount: int, currency: str, days: int, ip=None):
